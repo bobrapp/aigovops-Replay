@@ -8,8 +8,9 @@ import {
   VerifyInteractionParams,
   ReplayInteractionParams,
 } from "@workspace/api-zod";
-import { sha256, hashPrompt, hashResponse, buildChainHash } from "../lib/crypto";
+import { hashPrompt, hashResponse, buildChainHash } from "../lib/crypto";
 import { generateId } from "../lib/id";
+import { evalPolicyRule } from "../lib/policy-eval";
 
 const router: IRouter = Router();
 
@@ -105,14 +106,14 @@ router.post("/interactions", async (req, res) => {
 
   const violations: string[] = [];
   for (const policy of policies) {
-    try {
-      const fn = new Function("prompt", "response", "model", "userId", `try { return !!(${policy.rule}); } catch(e) { return true; }`);
-      const passed = fn(body.prompt, body.response, body.model, body.userId);
-      if (!passed) {
-        violations.push(`[${policy.severity.toUpperCase()}] ${policy.name}: ${policy.rule}`);
-      }
-    } catch {
-      // ignore eval errors
+    const passed = evalPolicyRule(policy.rule, {
+      prompt: body.prompt,
+      response: body.response,
+      model: body.model,
+      userId: body.userId,
+    });
+    if (!passed) {
+      violations.push(`[${policy.severity.toUpperCase()}] ${policy.name}: ${policy.rule}`);
     }
   }
 
@@ -157,19 +158,19 @@ router.post("/interactions", async (req, res) => {
     return inserted;
   });
 
-  // Update violation counts and log activity outside the lock window
+  // Update violation counts outside the lock window
   for (const policy of policies) {
-    try {
-      const fn = new Function("prompt", "response", "model", "userId", `try { return !!(${policy.rule}); } catch(e) { return true; }`);
-      const passed = fn(body.prompt, body.response, body.model, body.userId);
-      if (!passed) {
-        await db
-          .update(policiesTable)
-          .set({ violationCount: sql`${policiesTable.violationCount} + 1` })
-          .where(eq(policiesTable.id, policy.id));
-      }
-    } catch {
-      // ignore
+    const passed = evalPolicyRule(policy.rule, {
+      prompt: body.prompt,
+      response: body.response,
+      model: body.model,
+      userId: body.userId,
+    });
+    if (!passed) {
+      await db
+        .update(policiesTable)
+        .set({ violationCount: sql`${policiesTable.violationCount} + 1` })
+        .where(eq(policiesTable.id, policy.id));
     }
   }
 

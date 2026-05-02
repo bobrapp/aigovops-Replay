@@ -9,6 +9,7 @@ import {
   DeletePolicyParams,
 } from "@workspace/api-zod";
 import { generateId } from "../lib/id";
+import { validatePolicyRule } from "../lib/policy-eval";
 
 const router: IRouter = Router();
 
@@ -24,6 +25,13 @@ router.get("/policies", async (_req, res) => {
 
 router.post("/policies", async (req, res) => {
   const body = CreatePolicyBody.parse(req.body);
+
+  const ruleError = validatePolicyRule(body.rule);
+  if (ruleError !== null) {
+    res.status(422).json({ error: `Invalid rule: ${ruleError}` });
+    return;
+  }
+
   const id = generateId();
 
   const [policy] = await db
@@ -57,6 +65,14 @@ router.get("/policies/:id", async (req, res) => {
 router.patch("/policies/:id", async (req, res) => {
   const { id } = UpdatePolicyParams.parse(req.params);
   const body = UpdatePolicyBody.parse(req.body);
+
+  if (body.rule !== undefined) {
+    const ruleError = validatePolicyRule(body.rule);
+    if (ruleError !== null) {
+      res.status(422).json({ error: `Invalid rule: ${ruleError}` });
+      return;
+    }
+  }
 
   const updates: Partial<typeof policiesTable.$inferInsert> = {
     updatedAt: new Date(),
