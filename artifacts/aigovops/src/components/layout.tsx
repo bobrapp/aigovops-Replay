@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import {
   Shield, FileText, Link2, ShieldAlert, CheckCircle,
   Database, Search, Menu, X, BookOpen, Zap, Bot,
-  Mic, Clock, Gauge, ChevronRight
+  Mic, Clock, Gauge, ChevronRight, ChevronDown, ChevronUp
 } from "lucide-react";
 import { ReactNode, useState } from "react";
 import { useMode } from "@/context/mode";
@@ -72,32 +72,137 @@ function NavItem({ item, active, onClick }: {
   );
 }
 
+/** Mini shield mascot used inside the sidebar guide panel */
+function MiniShield() {
+  return (
+    <svg width="32" height="32" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M48 8L14 22v22c0 19.8 15.4 38.4 34 42.4C65.6 82.4 82 63.8 82 44V22L48 8z"
+        fill="rgba(27,59,111,0.9)" stroke="rgba(16,185,129,0.7)" strokeWidth="3"
+      />
+      <path
+        d="M48 18L24 28.5v17c0 13.8 10.8 26.8 24 29.8 13.2-3 24-16 24-29.8v-17L48 18z"
+        fill="rgba(16,185,129,0.15)"
+      />
+      <circle cx="38" cy="43" r="4" fill="#10B981" />
+      <circle cx="58" cy="43" r="4" fill="#10B981" />
+      <circle cx="39.8" cy="41.2" r="1.4" fill="rgba(255,255,255,0.7)" />
+      <circle cx="59.8" cy="41.2" r="1.4" fill="rgba(255,255,255,0.7)" />
+      <path d="M40 55 Q48 62 56 55" stroke="#10B981" strokeWidth="3" strokeLinecap="round" fill="none" />
+    </svg>
+  );
+}
+
+const guideTips: Record<"simple" | "expert", { headline: string; body: string }[]> = {
+  simple: [
+    {
+      headline: "Record a chat",
+      body: "Paste your AI conversation to create a signed, tamper-proof receipt.",
+    },
+    {
+      headline: "Check a recording",
+      body: "Verify any receipt's cryptographic hash to confirm it hasn't been altered.",
+    },
+    {
+      headline: "Your history",
+      body: "All your receipts are stored and linked in a chain — only you can see them.",
+    },
+  ],
+  expert: [
+    {
+      headline: "Mint receipts via API",
+      body: "POST /api/interactions to create signed receipts programmatically.",
+    },
+    {
+      headline: "Verify the chain",
+      body: "Chain view shows every link's hash — a broken link means tampering.",
+    },
+    {
+      headline: "Write a policy rule",
+      body: "Policy rules auto-flag interactions that violate your governance rules.",
+    },
+  ],
+};
+
+function GuidePanel() {
+  const { mode } = useMode();
+  const [open, setOpen] = useState(true);
+  const [tipIdx, setTipIdx] = useState(0);
+  const tips = guideTips[mode];
+  const tip = tips[tipIdx % tips.length];
+
+  return (
+    <div className="mx-3 mb-3 rounded-xl overflow-hidden border border-white/10" style={{ background: "rgba(255,255,255,0.05)" }}>
+      {/* Header */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-white/5 transition-colors"
+      >
+        <MiniShield />
+        <div className="flex-1 text-left min-w-0">
+          <div className="text-white text-xs font-semibold leading-tight">RELAY Guide</div>
+          <div className="text-white/40 text-[10px] leading-tight">Tap for tips</div>
+        </div>
+        {open ? <ChevronUp className="w-3 h-3 text-white/40 flex-shrink-0" /> : <ChevronDown className="w-3 h-3 text-white/40 flex-shrink-0" />}
+      </button>
+
+      {/* Tip card */}
+      {open && (
+        <div className="px-3 pb-3">
+          <div className="rounded-lg p-3" style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.15)" }}>
+            <div className="text-emerald-300 text-xs font-semibold mb-1">{tip.headline}</div>
+            <div className="text-white/60 text-[11px] leading-relaxed">{tip.body}</div>
+          </div>
+          {/* Tip navigation dots */}
+          <div className="flex items-center justify-center gap-1.5 mt-2.5">
+            {tips.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setTipIdx(i)}
+                className={`rounded-full transition-all ${i === tipIdx % tips.length ? "w-4 h-1.5 bg-emerald-400" : "w-1.5 h-1.5 bg-white/20 hover:bg-white/40"}`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Two-card mode toggle that makes the choice unmistakably visible */
 function ModeToggle() {
   const { mode, setMode } = useMode();
   return (
-    <div className="flex items-center gap-0.5 bg-white/10 rounded-lg p-0.5" data-testid="mode-toggle">
-      <button
-        onClick={() => setMode("simple")}
-        className={`flex-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
-          mode === "simple"
-            ? "bg-white text-[#1B3B6F] shadow-sm"
-            : "text-white/60 hover:text-white"
-        }`}
-        data-testid="mode-simple"
-      >
-        😊 Simple
-      </button>
-      <button
-        onClick={() => setMode("expert")}
-        className={`flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
-          mode === "expert"
-            ? "bg-white text-[#1B3B6F] shadow-sm"
-            : "text-white/60 hover:text-white"
-        }`}
-        data-testid="mode-expert"
-      >
-        <Gauge className="w-3 h-3" /> Expert
-      </button>
+    <div className="mx-3 mb-3" data-testid="mode-toggle">
+      <div className="text-[10px] text-white/35 uppercase tracking-widest font-semibold mb-2 px-0.5">View mode</div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <button
+          onClick={() => setMode("simple")}
+          data-testid="mode-simple"
+          className={`flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-xs font-bold transition-all border ${
+            mode === "simple"
+              ? "bg-emerald-400/15 border-emerald-400/50 text-emerald-300"
+              : "bg-white/5 border-white/10 text-white/50 hover:border-white/25 hover:text-white/80 hover:bg-white/8"
+          }`}
+        >
+          <span className="text-base leading-none">😊</span>
+          <span>Simple</span>
+          {mode === "simple" && <span className="w-1 h-1 rounded-full bg-emerald-400" />}
+        </button>
+        <button
+          onClick={() => setMode("expert")}
+          data-testid="mode-expert"
+          className={`flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-xs font-bold transition-all border ${
+            mode === "expert"
+              ? "bg-blue-400/15 border-blue-400/50 text-blue-300"
+              : "bg-white/5 border-white/10 text-white/50 hover:border-white/25 hover:text-white/80 hover:bg-white/8"
+          }`}
+        >
+          <Gauge className="w-4 h-4" />
+          <span>Expert</span>
+          {mode === "expert" && <span className="w-1 h-1 rounded-full bg-blue-400" />}
+        </button>
+      </div>
     </div>
   );
 }
@@ -105,7 +210,7 @@ function ModeToggle() {
 export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { mode } = useMode();
+  const { mode, setMode } = useMode();
   const isSimple = mode === "simple";
   const mobileNav = isSimple ? simpleMobileNav : expertMobileNav;
 
@@ -147,7 +252,8 @@ export function Layout({ children }: { children: ReactNode }) {
         ))}
       </nav>
 
-      <div className="px-3 py-3 border-t border-white/10">
+      <div className="border-t border-white/10 pt-3">
+        <GuidePanel />
         <ModeToggle />
       </div>
 
@@ -193,7 +299,8 @@ export function Layout({ children }: { children: ReactNode }) {
         ))}
       </nav>
 
-      <div className="px-3 py-3 border-t border-white/10">
+      <div className="border-t border-white/10 pt-3">
+        <GuidePanel />
         <ModeToggle />
       </div>
 
@@ -211,7 +318,7 @@ export function Layout({ children }: { children: ReactNode }) {
     <div className="flex h-screen w-full bg-background text-foreground">
 
       {/* Desktop sidebar — foundation navy */}
-      <aside className="hidden md:flex w-56 flex-col h-full flex-shrink-0" style={{ background: "#1B3B6F" }}>
+      <aside className="hidden md:flex w-60 flex-col h-full flex-shrink-0" style={{ background: "#1B3B6F" }}>
         <SidebarContent />
       </aside>
 
@@ -219,7 +326,7 @@ export function Layout({ children }: { children: ReactNode }) {
       {drawerOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDrawerOpen(false)} />
-          <aside className="absolute left-0 top-0 h-full w-60 flex flex-col z-10" style={{ background: "#1B3B6F" }}>
+          <aside className="absolute left-0 top-0 h-full w-64 flex flex-col z-10" style={{ background: "#1B3B6F" }}>
             <div className="flex items-center justify-between px-4 py-4 border-b border-white/10">
               <div className="flex items-center gap-2.5">
                 <div className="w-7 h-7 flex-shrink-0">
@@ -254,7 +361,31 @@ export function Layout({ children }: { children: ReactNode }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ModeToggle />
+            {/* Compact inline toggle for mobile header */}
+            <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5" data-testid="mode-toggle">
+              <button
+                onClick={() => setMode("simple")}
+                data-testid="mode-simple"
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  mode === "simple"
+                    ? "bg-white text-[#1B3B6F] shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                😊 Simple
+              </button>
+              <button
+                onClick={() => setMode("expert")}
+                data-testid="mode-expert"
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  mode === "expert"
+                    ? "bg-white text-[#1B3B6F] shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <Gauge className="w-3 h-3" /> Expert
+              </button>
+            </div>
             <button onClick={() => setDrawerOpen(true)} className="text-muted-foreground hover:text-foreground p-1">
               <Menu className="w-5 h-5" />
             </button>
