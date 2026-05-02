@@ -19,6 +19,53 @@ const router: IRouter = Router();
  */
 const CHAIN_WRITE_LOCK_KEY = 0x52455041; // "REPA" in hex — unique to this app
 
+/**
+ * Full-chain integrity: returns broken link count, non-null fork count,
+ * and genesis fork count (more than one receipt with NULL prevHash).
+ * All three must be zero for the chain to be intact.
+ */
+async function fullChainIntegrityCheck(): Promise<{
+  brokenLinks: number;
+  forks: number;
+  genesisCount: number;
+  intact: boolean;
+}> {
+  const [brokenLinksResult, forksResult, genesisResult] = await Promise.all([
+    // Broken link: receipt whose prevHash doesn't match any existing chainHash
+    db.execute<{ broken: string }>(sql`
+      SELECT COUNT(*) AS broken
+      FROM interactions
+      WHERE prev_hash IS NOT NULL
+        AND prev_hash NOT IN (SELECT chain_hash FROM interactions)
+    `),
+    // Fork: more than one receipt sharing the same non-null prevHash
+    db.execute<{ forks: string }>(sql`
+      SELECT COUNT(*) AS forks
+      FROM (
+        SELECT prev_hash
+        FROM interactions
+        WHERE prev_hash IS NOT NULL
+        GROUP BY prev_hash
+        HAVING COUNT(*) > 1
+      ) dup
+    `),
+    // Genesis count: exactly one receipt should have NULL prevHash when chain is non-empty
+    db.execute<{ genesis_count: string }>(sql`
+      SELECT COUNT(*) AS genesis_count FROM interactions WHERE prev_hash IS NULL
+    `),
+  ]);
+
+  const brokenLinks = Number((brokenLinksResult.rows[0] as { broken: string } | undefined)?.broken ?? 0);
+  const forks = Number((forksResult.rows[0] as { forks: string } | undefined)?.forks ?? 0);
+  const genesisCount = Number((genesisResult.rows[0] as { genesis_count: string } | undefined)?.genesis_count ?? 0);
+
+  // A valid non-empty chain has exactly one genesis entry
+  // genesisCount > 1 means competing genesis nodes (also a fork)
+  const intact = brokenLinks === 0 && forks === 0 && genesisCount <= 1;
+
+  return { brokenLinks, forks, genesisCount, intact };
+}
+
 router.get("/interactions", async (req, res) => {
   const query = ListInteractionsQueryParams.parse(req.query);
   const conditions: ReturnType<typeof eq>[] = [];
@@ -112,8 +159,8 @@ router.post("/interactions", async (req, res) => {
 
   // Update violation counts and log activity outside the lock window
   for (const policy of policies) {
-    const fn = new Function("prompt", "response", "model", "userId", `try { return !!(${policy.rule}); } catch(e) { return true; }`);
     try {
+      const fn = new Function("prompt", "response", "model", "userId", `try { return !!(${policy.rule}); } catch(e) { return true; }`);
       const passed = fn(body.prompt, body.response, body.model, body.userId);
       if (!passed) {
         await db
@@ -171,7 +218,7 @@ router.get("/interactions/:id/verify", async (req, res) => {
   const expectedChainHash = buildChainHash(interaction.promptHash, interaction.responseHash, interaction.prevHash ?? null);
   const chainHashSelfConsistent = expectedChainHash === interaction.chainHash;
 
-  // 3. Verify the predecessor exists in the chain (detects forked or orphaned receipts)
+  // 3. Verify the predecessor exists in the chain (detects orphaned receipts)
   let predecessorExists = true;
   if (interaction.prevHash !== null) {
     const [pred] = await db
@@ -182,25 +229,49 @@ router.get("/interactions/:id/verify", async (req, res) => {
     predecessorExists = pred !== undefined;
   }
 
-  // 4. Verify no other receipt claims the same prevHash (fork detection)
-  let noForkAtPrevHash = true;
-  if (interaction.prevHash !== null) {
-    const forkResult = await db
-      .select({ cnt: count() })
-      .from(interactionsTable)
-      .where(eq(interactionsTable.prevHash, interaction.prevHash));
-    noForkAtPrevHash = Number(forkResult[0]?.cnt ?? 0) <= 1;
+  // 4. Walk the full ancestry using a recursive CTE to detect any fork in the lineage.
+  //    For each ancestor, we check whether more than one receipt claims that ancestor
+  //    as its predecessor — if so, this receipt is a descendant of a fork.
+  const lineageForkResult = await db.execute<{ fork_in_lineage: string }>(sql`
+    WITH RECURSIVE ancestry AS (
+      SELECT id, chain_hash, prev_hash
+      FROM interactions
+      WHERE id = ${id}
+      UNION ALL
+      SELECT i.id, i.chain_hash, i.prev_hash
+      FROM interactions i
+      JOIN ancestry a ON i.chain_hash = a.prev_hash
+      WHERE a.prev_hash IS NOT NULL
+    )
+    SELECT COUNT(*) AS fork_in_lineage
+    FROM ancestry a
+    WHERE (
+      SELECT COUNT(*) FROM interactions WHERE prev_hash = a.chain_hash
+    ) > 1
+  `);
+  const lineageForked = Number((lineageForkResult.rows[0] as { fork_in_lineage: string } | undefined)?.fork_in_lineage ?? 0) > 0;
+
+  // 5. Genesis uniqueness: if this receipt is a genesis (null prevHash), verify there is
+  //    exactly one genesis entry. Multiple genesis nodes indicate a corrupted chain root.
+  let multipleGenesisNodes = false;
+  if (interaction.prevHash === null) {
+    const genesisResult = await db.execute<{ genesis_count: string }>(sql`
+      SELECT COUNT(*) AS genesis_count FROM interactions WHERE prev_hash IS NULL
+    `);
+    const genesisCount = Number((genesisResult.rows[0] as { genesis_count: string } | undefined)?.genesis_count ?? 0);
+    multipleGenesisNodes = genesisCount > 1;
   }
 
-  const chainIntact = chainHashSelfConsistent && predecessorExists && noForkAtPrevHash;
+  const chainIntact = chainHashSelfConsistent && predecessorExists && !lineageForked && !multipleGenesisNodes;
   const valid = promptHashMatch && responseHashMatch && chainIntact;
 
   const failReasons: string[] = [];
   if (!promptHashMatch) failReasons.push("prompt hash mismatch");
   if (!responseHashMatch) failReasons.push("response hash mismatch");
   if (!chainHashSelfConsistent) failReasons.push("chain hash mismatch");
-  if (!predecessorExists) failReasons.push("predecessor receipt not found (orphaned or forked)");
-  if (!noForkAtPrevHash) failReasons.push("fork detected: another receipt claims the same predecessor");
+  if (!predecessorExists) failReasons.push("predecessor receipt not found (orphaned)");
+  if (lineageForked) failReasons.push("fork detected in ancestry: this receipt descends from a split chain");
+  if (multipleGenesisNodes) failReasons.push("multiple genesis entries: chain root is ambiguous");
 
   await db.insert(activityLogTable).values({
     id: generateId(),
@@ -307,33 +378,12 @@ router.post("/interactions/:id/replay", async (req, res) => {
 });
 
 router.get("/chain", async (_req, res) => {
-  // Full-chain integrity check using SQL — not limited to a window
-  const [totalCountResult, brokenLinksResult, forksResult] = await Promise.all([
+  const [totalCountResult, chainStatus] = await Promise.all([
     db.select({ cnt: count() }).from(interactionsTable),
-    // Broken link: a receipt whose prevHash doesn't match any existing chainHash
-    db.execute<{ broken: string }>(sql`
-      SELECT COUNT(*) AS broken
-      FROM interactions
-      WHERE prev_hash IS NOT NULL
-        AND prev_hash NOT IN (SELECT chain_hash FROM interactions)
-    `),
-    // Fork: more than one receipt sharing the same non-null prevHash
-    db.execute<{ forks: string }>(sql`
-      SELECT COUNT(*) AS forks
-      FROM (
-        SELECT prev_hash
-        FROM interactions
-        WHERE prev_hash IS NOT NULL
-        GROUP BY prev_hash
-        HAVING COUNT(*) > 1
-      ) dup
-    `),
+    fullChainIntegrityCheck(),
   ]);
 
   const totalCount = Number(totalCountResult[0]?.cnt ?? 0);
-  const brokenLinks = Number((brokenLinksResult.rows[0] as { broken: string } | undefined)?.broken ?? 0);
-  const forks = Number((forksResult.rows[0] as { forks: string } | undefined)?.forks ?? 0);
-  const intact = brokenLinks === 0 && forks === 0;
 
   // Return most recent 100 entries for display — integrity is verified over the full chain above
   const entries = await db
@@ -354,9 +404,10 @@ router.get("/chain", async (_req, res) => {
     length: totalCount,
     headHash,
     tailHash,
-    intact,
-    forkCount: forks,
-    brokenLinkCount: brokenLinks,
+    intact: chainStatus.intact,
+    forkCount: chainStatus.forks,
+    brokenLinkCount: chainStatus.brokenLinks,
+    genesisCount: chainStatus.genesisCount,
     entries: entries.map((e) => ({
       id: e.id,
       chainHash: e.chainHash,
@@ -367,11 +418,12 @@ router.get("/chain", async (_req, res) => {
 });
 
 router.get("/stats", async (_req, res) => {
-  const [totalResult, policyPassResult, policyFailResult, replayResult] = await Promise.all([
+  const [totalResult, policyPassResult, policyFailResult, replayResult, chainStatus] = await Promise.all([
     db.select({ count: count() }).from(interactionsTable),
     db.select({ count: count() }).from(interactionsTable).where(eq(interactionsTable.policyStatus, "pass")),
     db.select({ count: count() }).from(interactionsTable).where(eq(interactionsTable.policyStatus, "fail")),
     db.select({ count: sql<number>`sum(${interactionsTable.replayCount})` }).from(interactionsTable),
+    fullChainIntegrityCheck(),
   ]);
 
   const modelsResult = await db
@@ -384,30 +436,7 @@ router.get("/stats", async (_req, res) => {
     .orderBy(desc(activityLogTable.createdAt))
     .limit(10);
 
-  // Full-chain integrity check — not limited to a window
-  const [brokenLinksResult, forksResult] = await Promise.all([
-    db.execute<{ broken: string }>(sql`
-      SELECT COUNT(*) AS broken
-      FROM interactions
-      WHERE prev_hash IS NOT NULL
-        AND prev_hash NOT IN (SELECT chain_hash FROM interactions)
-    `),
-    db.execute<{ forks: string }>(sql`
-      SELECT COUNT(*) AS forks
-      FROM (
-        SELECT prev_hash
-        FROM interactions
-        WHERE prev_hash IS NOT NULL
-        GROUP BY prev_hash
-        HAVING COUNT(*) > 1
-      ) dup
-    `),
-  ]);
-
   const totalCount = Number(totalResult[0]?.count ?? 0);
-  const brokenLinks = Number((brokenLinksResult.rows[0] as { broken: string } | undefined)?.broken ?? 0);
-  const forks = Number((forksResult.rows[0] as { forks: string } | undefined)?.forks ?? 0);
-  const chainIntact = brokenLinks === 0 && forks === 0;
 
   res.json({
     totalInteractions: totalCount,
@@ -424,7 +453,7 @@ router.get("/stats", async (_req, res) => {
       createdAt: a.createdAt.toISOString(),
     })),
     chainLength: totalCount,
-    chainIntact,
+    chainIntact: chainStatus.intact,
   });
 });
 

@@ -571,6 +571,9 @@ components:
         brokenLinkCount:
           type: integer
           description: Number of receipts whose prevHash does not match any existing chainHash
+        genesisCount:
+          type: integer
+          description: Number of receipts with null prevHash; a valid non-empty chain has exactly one
         entries:
           type: array
           description: Most recent receipts (up to 100) for display. Integrity is verified over the full chain.
@@ -597,4 +600,5 @@ components:
         - intact
         - forkCount
         - brokenLinkCount
+        - genesisCount
         - entries
