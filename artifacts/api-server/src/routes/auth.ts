@@ -1,3 +1,45 @@
+/**
+ * auth.ts — OIDC login/callback/logout routes and mobile token-exchange.
+ *
+ * ─── AUTHENTICATION AND ORIGIN CONTROLS (defense-in-depth) ───────────────────
+ *
+ * 1. CORS ALLOWLIST (app.ts)
+ *    cors({ credentials: true, origin: allowedOrigins }) — credentials are
+ *    reflected ONLY to origins in the explicit allowlist built from
+ *    REPLIT_DOMAINS and REPLIT_DEV_DOMAIN.  The previous `origin: true`
+ *    reflected any caller-supplied Origin header; that has been removed.
+ *    Unrecognised origins receive no ACAO header and no credentials.
+ *
+ * 2. OIDC REDIRECT-URI PINNING (this file — getCanonicalOrigin)
+ *    The `redirect_uri` in /login, /callback, and the `post_logout_redirect_uri`
+ *    in /logout are now constructed from getCanonicalOrigin(), which reads ONLY
+ *    from trusted environment variables (APP_ORIGIN → REPLIT_DOMAINS →
+ *    REPLIT_DEV_DOMAIN → localhost fallback).  Request headers (x-forwarded-host,
+ *    x-forwarded-proto, host) are never consulted.
+ *
+ *    Attack mitigated: a poisoned Host / X-Forwarded-Host header in a proxy
+ *    deployment could previously cause the server to send Replit OIDC an
+ *    authorization request with redirect_uri=https://attacker.example/…,
+ *    allowing the attacker to observe the completed-login callback and steal
+ *    the session ID.
+ *
+ * 3. PKCE + STATE + NONCE (this file)
+ *    Every web login uses PKCE (S256), a random state, and a random nonce stored
+ *    in httpOnly SameSite=Lax cookies, all verified in /callback.  This prevents
+ *    CSRF-based authorization-code injection and nonce-replay attacks.
+ *
+ * 4. SESSION COOKIE HARDENING (setSessionCookie)
+ *    httpOnly: true   — no JS access
+ *    secure: true     — HTTPS only
+ *    sameSite: "lax"  — blocks cross-site POST form submissions
+ *    Admin cookie (admin.ts): sameSite: "strict" — even stricter
+ *
+ * 5. MOBILE SECURE STORAGE (AuthContext.tsx — mobile app)
+ *    The mobile bearer token (sid) is stored in expo-secure-store (platform
+ *    Keychain on iOS / Android Keystore), NOT in AsyncStorage.  AsyncStorage
+ *    is plaintext and readable from ADB/backups; SecureStore encrypts at rest.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 import * as oidc from "openid-client";
 import { Router, type IRouter, type Request, type Response } from "express";
 import {
@@ -23,11 +65,48 @@ const OIDC_COOKIE_TTL = 10 * 60 * 1000;
 
 const router: IRouter = Router();
 
-function getOrigin(req: Request): string {
-  const proto = req.headers["x-forwarded-proto"] || "https";
-  const host =
-    req.headers["x-forwarded-host"] || req.headers["host"] || "localhost";
-  return `${proto}://${host}`;
+/**
+ * Derive the application's canonical public origin from trusted environment
+ * variables — NOT from request headers.
+ *
+ * Security rationale (OIDC redirect-URI pinning):
+ *   The previous implementation read `x-forwarded-proto`, `x-forwarded-host`,
+ *   and `host` from the incoming request to build the OIDC `redirect_uri` and
+ *   `post_logout_redirect_uri`. In proxy deployments those headers can be
+ *   attacker-controlled: a poisoned `Host: attacker.example` header would cause
+ *   the server to send Replit OIDC an `redirect_uri=https://attacker.example/…`
+ *   authorization request. If the provider accepted the dynamically supplied URI,
+ *   the victim's completed-login callback (and therefore the session ID) could be
+ *   observed by the attacker.
+ *
+ * Trusted sources (in priority order):
+ *   1. APP_ORIGIN env var — explicit operator override, useful for custom domains.
+ *   2. First entry of REPLIT_DOMAINS — set by the Replit platform for production
+ *      deployments; not forwardable by a client.
+ *   3. REPLIT_DEV_DOMAIN — the per-Repl development preview hostname, also
+ *      set by the platform.
+ *   4. http://localhost:3000 — local development only (not reachable from outside).
+ *
+ * Request headers are never consulted.
+ */
+function getCanonicalOrigin(): string {
+  // Explicit operator-configured override (e.g. custom domain).
+  const appOrigin = process.env.APP_ORIGIN;
+  if (appOrigin) return appOrigin.replace(/\/$/, "");
+
+  // Production: first entry of the Replit-managed domain list.
+  const replitDomains = process.env.REPLIT_DOMAINS;
+  if (replitDomains) {
+    const first = replitDomains.split(",").map((s) => s.trim()).filter(Boolean)[0];
+    if (first) return `https://${first}`;
+  }
+
+  // Development preview: Replit-assigned per-Repl domain.
+  const devDomain = process.env.REPLIT_DEV_DOMAIN;
+  if (devDomain) return `https://${devDomain}`;
+
+  // Local fallback — only reachable in a developer's own environment.
+  return "http://localhost:3000";
 }
 
 function setSessionCookie(res: Response, sid: string) {
@@ -92,7 +171,8 @@ router.get("/auth/user", (req: Request, res: Response) => {
 
 router.get("/login", async (req: Request, res: Response) => {
   const config = await getOidcConfig();
-  const callbackUrl = `${getOrigin(req)}/api/callback`;
+  // Use the server-side canonical origin — never derived from request headers.
+  const callbackUrl = `${getCanonicalOrigin()}/api/callback`;
 
   const returnTo = getSafeReturnTo(req.query.returnTo);
 
@@ -123,7 +203,8 @@ router.get("/login", async (req: Request, res: Response) => {
 // parameters not expressed in the schema.
 router.get("/callback", async (req: Request, res: Response) => {
   const config = await getOidcConfig();
-  const callbackUrl = `${getOrigin(req)}/api/callback`;
+  // Must match the redirect_uri sent in /login — pinned to the canonical origin.
+  const callbackUrl = `${getCanonicalOrigin()}/api/callback`;
 
   const codeVerifier = req.cookies?.code_verifier;
   const nonce = req.cookies?.nonce;
@@ -189,7 +270,8 @@ router.get("/callback", async (req: Request, res: Response) => {
 
 router.get("/logout", async (req: Request, res: Response) => {
   const config = await getOidcConfig();
-  const origin = getOrigin(req);
+  // Post-logout redirect pinned to the canonical origin — not request headers.
+  const origin = getCanonicalOrigin();
 
   const sid = getSessionId(req);
   await clearSession(res, sid);

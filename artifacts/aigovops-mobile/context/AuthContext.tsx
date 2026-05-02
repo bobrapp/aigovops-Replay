@@ -1,4 +1,30 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+/**
+ * AuthContext.tsx — authentication state and OIDC login flow for the mobile app.
+ *
+ * ─── SECURE TOKEN STORAGE ─────────────────────────────────────────────────────
+ *
+ * The opaque bearer session token (sid) returned by /api/mobile-auth/token-exchange
+ * is stored in expo-secure-store (SecureStore), NOT in AsyncStorage.
+ *
+ * Why this matters:
+ *   AsyncStorage is an unencrypted key-value store intended for non-sensitive app
+ *   data.  It is readable by anyone with access to the device's app data — iOS
+ *   backups, ADB extraction, rooted/jailbroken devices, or local malware that can
+ *   read the app sandbox.  Because the same sid is accepted as a bearer token by
+ *   every authenticated API endpoint via Authorization: Bearer <sid>, a stolen
+ *   AsyncStorage value enables full account impersonation for up to 7 days
+ *   (SESSION_TTL in api-server/src/lib/auth.ts).
+ *
+ * SecureStore uses platform-backed protected storage:
+ *   iOS  — Keychain Services (hardware-isolated on devices with Secure Enclave)
+ *   Android — Android Keystore System / EncryptedSharedPreferences
+ *
+ * The sid is therefore encrypted at rest, bound to the app, and inaccessible to
+ * other apps or system-level backup tools (unless device is rooted/compromised at
+ * the OS level, which is out of scope for app-layer security).
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+import * as SecureStore from "expo-secure-store";
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
@@ -91,13 +117,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Persist or clear the session token in SecureStore (platform Keychain/Keystore).
+  // SecureStore encrypts values at rest — unlike AsyncStorage which is plaintext.
   const persistToken = useCallback(async (sid: string | null) => {
     setToken(sid);
     setAuthTokenGetter(() => sid);
     if (sid) {
-      await AsyncStorage.setItem(STORAGE_KEY, sid);
+      await SecureStore.setItemAsync(STORAGE_KEY, sid);
     } else {
-      await AsyncStorage.removeItem(STORAGE_KEY);
+      await SecureStore.deleteItemAsync(STORAGE_KEY);
     }
   }, []);
 
@@ -105,7 +133,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setBaseUrl(apiBase);
     setAuthTokenGetter(() => null);
 
-    AsyncStorage.getItem(STORAGE_KEY).then(async (stored) => {
+    // Load any previously stored session from SecureStore on startup.
+    SecureStore.getItemAsync(STORAGE_KEY).then(async (stored) => {
       if (stored) {
         const u = await fetchUser(stored);
         if (u) {
@@ -113,7 +142,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setAuthTokenGetter(() => stored);
           setUser(u);
         } else {
-          await AsyncStorage.removeItem(STORAGE_KEY);
+          // Stored token is invalid or expired — remove it.
+          await SecureStore.deleteItemAsync(STORAGE_KEY);
         }
       }
       setIsLoading(false);
