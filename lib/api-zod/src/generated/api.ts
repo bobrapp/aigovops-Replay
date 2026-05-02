@@ -224,24 +224,54 @@ export const GetStatsResponse = zod.object({
       createdAt: zod.coerce.date(),
     }),
   ),
-  chainLength: zod.number(),
-  chainIntact: zod.boolean(),
+  chainLength: zod
+    .number()
+    .describe(
+      "Total number of receipts in the chain (full count, not a 100-entry window)",
+    ),
+  chainIntact: zod
+    .boolean()
+    .describe(
+      "True only when the full chain has no broken links and no forks (checked over all receipts)",
+    ),
 });
 
 /**
  * @summary Get the full hash chain summary
  */
 export const GetChainResponse = zod.object({
-  length: zod.number(),
+  length: zod
+    .number()
+    .describe(
+      "Total number of receipts in the chain (full count, not a window)",
+    ),
   headHash: zod.string(),
   tailHash: zod.string().nullish(),
-  intact: zod.boolean(),
-  entries: zod.array(
-    zod.object({
-      id: zod.string(),
-      chainHash: zod.string(),
-      prevHash: zod.string().nullish(),
-      createdAt: zod.coerce.date(),
-    }),
-  ),
+  intact: zod
+    .boolean()
+    .describe(
+      "True only when the full chain has no broken links and no forks (checked over all receipts, not a window)",
+    ),
+  forkCount: zod
+    .number()
+    .describe(
+      "Number of prevHash values claimed by more than one receipt (indicates concurrent write races)",
+    ),
+  brokenLinkCount: zod
+    .number()
+    .describe(
+      "Number of receipts whose prevHash does not match any existing chainHash",
+    ),
+  entries: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        chainHash: zod.string(),
+        prevHash: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+      }),
+    )
+    .describe(
+      "Most recent receipts (up to 100) for display. Integrity is verified over the full chain.",
+    ),
 });

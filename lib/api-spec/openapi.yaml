@@ -514,8 +514,10 @@ components:
             $ref: "#/components/schemas/ActivityItem"
         chainLength:
           type: integer
+          description: Total number of receipts in the chain (full count, not a 100-entry window)
         chainIntact:
           type: boolean
+          description: True only when the full chain has no broken links and no forks (checked over all receipts)
       required:
         - totalInteractions
         - verifiedCount
@@ -554,6 +556,7 @@ components:
       properties:
         length:
           type: integer
+          description: Total number of receipts in the chain (full count, not a window)
         headHash:
           type: string
         tailHash:
@@ -561,8 +564,16 @@ components:
           nullable: true
         intact:
           type: boolean
+          description: True only when the full chain has no broken links and no forks (checked over all receipts, not a window)
+        forkCount:
+          type: integer
+          description: Number of prevHash values claimed by more than one receipt (indicates concurrent write races)
+        brokenLinkCount:
+          type: integer
+          description: Number of receipts whose prevHash does not match any existing chainHash
         entries:
           type: array
+          description: Most recent receipts (up to 100) for display. Integrity is verified over the full chain.
           items:
             type: object
             properties:
@@ -584,4 +595,6 @@ components:
         - length
         - headHash
         - intact
+        - forkCount
+        - brokenLinkCount
         - entries

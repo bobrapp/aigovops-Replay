@@ -159,7 +159,9 @@ export interface Stats {
   replayCount: number;
   modelsUsed: string[];
   recentActivity: ActivityItem[];
+  /** Total number of receipts in the chain (full count, not a 100-entry window) */
   chainLength: number;
+  /** True only when the full chain has no broken links and no forks (checked over all receipts) */
   chainIntact: boolean;
 }
 
@@ -171,10 +173,17 @@ export type ChainSummaryEntriesItem = {
 };
 
 export interface ChainSummary {
+  /** Total number of receipts in the chain (full count, not a window) */
   length: number;
   headHash: string;
   tailHash?: string | null;
+  /** True only when the full chain has no broken links and no forks (checked over all receipts, not a window) */
   intact: boolean;
+  /** Number of prevHash values claimed by more than one receipt (indicates concurrent write races) */
+  forkCount: number;
+  /** Number of receipts whose prevHash does not match any existing chainHash */
+  brokenLinkCount: number;
+  /** Most recent receipts (up to 100) for display. Integrity is verified over the full chain. */
   entries: ChainSummaryEntriesItem[];
 }
 

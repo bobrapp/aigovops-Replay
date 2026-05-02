@@ -1,4 +1,4 @@
-import { pgTable, text, integer, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -21,7 +21,9 @@ export const interactionsTable = pgTable("interactions", {
   policyViolations: text("policy_violations").array().notNull().default([]),
   replayCount: integer("replay_count").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("interactions_chain_hash_unique").on(table.chainHash),
+]);
 
 export const insertInteractionSchema = createInsertSchema(interactionsTable).omit({ createdAt: true });
 export type InsertInteraction = z.infer<typeof insertInteractionSchema>;
