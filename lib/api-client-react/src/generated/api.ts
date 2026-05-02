@@ -1165,6 +1165,7 @@ export function useListPolicies<
 }
 
 /**
+ * Requires admin privilege (caller's user ID must be in the ADMIN_USER_IDS server environment variable).
  * @summary Create a new policy rule
  */
 export const getCreatePolicyUrl = () => {
@@ -1184,7 +1185,7 @@ export const createPolicy = async (
 };
 
 export const getCreatePolicyMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1225,13 +1226,13 @@ export type CreatePolicyMutationResult = NonNullable<
   Awaited<ReturnType<typeof createPolicy>>
 >;
 export type CreatePolicyMutationBody = BodyType<CreatePolicyBody>;
-export type CreatePolicyMutationError = ErrorType<unknown>;
+export type CreatePolicyMutationError = ErrorType<void>;
 
 /**
  * @summary Create a new policy rule
  */
 export const useCreatePolicy = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1572,6 +1573,8 @@ export function useGetStats<
 }
 
 /**
+ * Returns integrity metadata for the authenticated user's receipt chain. `length` is the total number of the caller's receipts (full count, not a windowed subset). `intact` and the fork/broken-link counts are computed over all of the caller's receipts with no window limit. `entries` contains the caller's most recent 100 receipts for display purposes only — integrity is always verified over the full set.
+
  * @summary Get the full hash chain summary
  */
 export const getGetChainUrl = () => {

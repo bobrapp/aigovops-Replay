@@ -103,11 +103,23 @@ export const HealthCheckResponse = zod.object({
  * @summary List all interaction receipts
  */
 export const listInteractionsQueryLimitDefault = 50;
+export const listInteractionsQueryLimitMax = 200;
+
 export const listInteractionsQueryOffsetDefault = 0;
+export const listInteractionsQueryOffsetMin = 0;
+export const listInteractionsQueryOffsetMax = 100000;
 
 export const ListInteractionsQueryParams = zod.object({
-  limit: zod.coerce.number().int().min(1).max(200).default(listInteractionsQueryLimitDefault),
-  offset: zod.coerce.number().int().min(0).max(100000).default(listInteractionsQueryOffsetDefault),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listInteractionsQueryLimitMax)
+    .default(listInteractionsQueryLimitDefault),
+  offset: zod.coerce
+    .number()
+    .min(listInteractionsQueryOffsetMin)
+    .max(listInteractionsQueryOffsetMax)
+    .default(listInteractionsQueryOffsetDefault),
   model: zod.coerce.string().optional(),
   policyStatus: zod.enum(["pass", "fail", "pending"]).optional(),
 });
@@ -177,15 +189,35 @@ export const VerifyInteractionParams = zod.object({
   id: zod.coerce.string(),
 });
 
-export const VerifyInteractionResponse = zod.object({
-  id: zod.string(),
-  valid: zod.boolean(),
-  promptHashMatch: zod.boolean(),
-  responseHashMatch: zod.boolean(),
-  chainIntact: zod.boolean(),
-  details: zod.string(),
-  checkedAt: zod.coerce.date(),
-});
+export const VerifyInteractionResponse = zod
+  .object({
+    id: zod.string(),
+    valid: zod
+      .boolean()
+      .describe(
+        "True only when prompt hash, response hash, chainHash, predecessor existence, ancestry fork detection, and genesis uniqueness all pass.\n",
+      ),
+    promptHashMatch: zod
+      .boolean()
+      .describe("Re-computed prompt hash matches the stored promptHash."),
+    responseHashMatch: zod
+      .boolean()
+      .describe("Re-computed response hash matches the stored responseHash."),
+    chainIntact: zod
+      .boolean()
+      .describe(
+        "True when: chainHash is self-consistent with stored fields; the predecessor receipt exists (if prevHash is non-null); no fork is detected anywhere in this receipt's ancestry; and there is exactly one genesis entry globally.\n",
+      ),
+    details: zod
+      .string()
+      .describe(
+        'Human-readable summary. On failure, lists each specific check that failed (e.g. \"predecessor receipt not found\", \"fork detected in ancestry\", \"multiple genesis entries\").\n',
+      ),
+    checkedAt: zod.coerce.date(),
+  })
+  .describe(
+    "Result of a multi-step cryptographic chain verification. Four independent checks are performed and combined into a single `valid` verdict: (1) prompt content hash re-computation, (2) response content hash re-computation, (3) chainHash self-consistency check (recomputed from stored promptHash,\n    responseHash, and prevHash) plus predecessor existence check plus\n    recursive-CTE ancestry walk for forks, and\n(4) global genesis uniqueness (exactly one receipt with null prevHash). `valid` is true only when all four checks pass.\n",
+  );
 
 /**
  * @summary Replay an interaction and compare outputs
@@ -225,6 +257,7 @@ export const ListPoliciesResponse = zod.object({
 });
 
 /**
+ * Requires admin privilege (caller's user ID must be in the ADMIN_USER_IDS server environment variable).
  * @summary Create a new policy rule
  */
 export const CreatePolicyBody = zod.object({
@@ -291,13 +324,15 @@ export const DeletePolicyParams = zod.object({
 /**
  * @summary Get dashboard statistics
  */
+export const getStatsResponseModelsUsedMax = 200;
+
 export const GetStatsResponse = zod.object({
   totalInteractions: zod.number(),
   verifiedCount: zod.number(),
   policyPassCount: zod.number(),
   policyFailCount: zod.number(),
   replayCount: zod.number(),
-  modelsUsed: zod.array(zod.string()),
+  modelsUsed: zod.array(zod.string()).max(getStatsResponseModelsUsedMax),
   recentActivity: zod.array(
     zod.object({
       id: zod.string(),
@@ -310,16 +345,18 @@ export const GetStatsResponse = zod.object({
   chainLength: zod
     .number()
     .describe(
-      "Total number of receipts in the chain (full count, not a 100-entry window)",
+      "Total number of receipts in the global chain across all users (full count, not a windowed subset).\n",
     ),
   chainIntact: zod
     .boolean()
     .describe(
-      "True only when the full chain has no broken links and no forks (checked over all receipts)",
+      "True only when the global chain (all users, all receipts) has no broken links and no forks (checked over the entire chain, not a windowed subset).\n",
     ),
 });
 
 /**
+ * Returns integrity metadata for the authenticated user's receipt chain. `length` is the total number of the caller's receipts (full count, not a windowed subset). `intact` and the fork/broken-link counts are computed over all of the caller's receipts with no window limit. `entries` contains the caller's most recent 100 receipts for display purposes only — integrity is always verified over the full set.
+
  * @summary Get the full hash chain summary
  */
 export const GetChainResponse = zod.object({

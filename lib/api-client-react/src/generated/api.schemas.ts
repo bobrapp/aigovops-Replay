@@ -90,12 +90,27 @@ export interface CreateInteractionBody {
   tags?: string[];
 }
 
+/**
+ * Result of a multi-step cryptographic chain verification. Four independent checks are performed and combined into a single `valid` verdict: (1) prompt content hash re-computation, (2) response content hash re-computation, (3) chainHash self-consistency check (recomputed from stored promptHash,
+    responseHash, and prevHash) plus predecessor existence check plus
+    recursive-CTE ancestry walk for forks, and
+(4) global genesis uniqueness (exactly one receipt with null prevHash). `valid` is true only when all four checks pass.
+
+ */
 export interface VerificationResult {
   id: string;
+  /** True only when prompt hash, response hash, chainHash, predecessor existence, ancestry fork detection, and genesis uniqueness all pass.
+   */
   valid: boolean;
+  /** Re-computed prompt hash matches the stored promptHash. */
   promptHashMatch: boolean;
+  /** Re-computed response hash matches the stored responseHash. */
   responseHashMatch: boolean;
+  /** True when: chainHash is self-consistent with stored fields; the predecessor receipt exists (if prevHash is non-null); no fork is detected anywhere in this receipt's ancestry; and there is exactly one genesis entry globally.
+   */
   chainIntact: boolean;
+  /** Human-readable summary. On failure, lists each specific check that failed (e.g. "predecessor receipt not found", "fork detected in ancestry", "multiple genesis entries").
+   */
   details: string;
   checkedAt: string;
 }
@@ -197,11 +212,14 @@ export interface Stats {
   policyPassCount: number;
   policyFailCount: number;
   replayCount: number;
+  /** @maxItems 200 */
   modelsUsed: string[];
   recentActivity: ActivityItem[];
-  /** Total number of receipts in the chain (full count, not a 100-entry window) */
+  /** Total number of receipts in the global chain across all users (full count, not a windowed subset).
+   */
   chainLength: number;
-  /** True only when the full chain has no broken links and no forks (checked over all receipts) */
+  /** True only when the global chain (all users, all receipts) has no broken links and no forks (checked over the entire chain, not a windowed subset).
+   */
   chainIntact: boolean;
 }
 
@@ -248,7 +266,15 @@ export type HandleBrowserLoginCallbackParams = {
 };
 
 export type ListInteractionsParams = {
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
   limit?: number;
+  /**
+   * @minimum 0
+   * @maximum 100000
+   */
   offset?: number;
   model?: string;
   policyStatus?: ListInteractionsPolicyStatus;

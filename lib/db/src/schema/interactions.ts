@@ -1,4 +1,5 @@
 import { pgTable, text, integer, timestamp, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -23,6 +24,10 @@ export const interactionsTable = pgTable("interactions", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("interactions_chain_hash_unique").on(table.chainHash),
+  // Partial unique index on non-null prevHash: ensures at most one receipt
+  // can claim any given predecessor, providing DB-level fork prevention as
+  // defense-in-depth alongside the application-level advisory lock.
+  uniqueIndex("interactions_prev_hash_unique").on(table.prevHash).where(sql`prev_hash IS NOT NULL`),
 ]);
 
 export const insertInteractionSchema = createInsertSchema(interactionsTable).omit({ createdAt: true });

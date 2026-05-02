@@ -22,22 +22,37 @@ const router: IRouter = Router();
 
 /**
  * Advisory lock key used to serialize all chain-append operations.
- * pg_advisory_xact_lock is automatically released at transaction end.
+ *
+ * Security rationale (fork prevention):
+ *   Without serialization, two concurrent POST /interactions requests can each
+ *   read the same latest chainHash, independently compute a new chainHash from
+ *   it, and both insert successfully — creating a fork. This corrupts the
+ *   append-only audit guarantee.
+ *
+ * Mitigations applied (defense-in-depth):
+ *   1. Application layer: pg_advisory_xact_lock inside a transaction ensures
+ *      only one writer can read-then-insert the chain tip at a time.
+ *      pg_advisory_xact_lock is automatically released at transaction end.
+ *   2. Database layer: a partial unique index on prev_hash (WHERE prev_hash IS
+ *      NOT NULL) in the interactions table rejects any second receipt that
+ *      claims an already-claimed predecessor, even if the lock is bypassed
+ *      (e.g. direct DB write or a future multi-instance deployment).
  */
 const CHAIN_WRITE_LOCK_KEY = 0x52455041; // "REPA" in hex — unique to this app
 
 /**
- * Per-user chain integrity check.
+ * Per-user chain integrity check over ALL of the user's receipts (no window limit).
  *
  * All three queries are scoped to the calling user's receipts so that
  * integrity metadata for other users is never included in the result.
  *
  * Returns:
- *  brokenLinks — receipts whose prevHash doesn't match any chainHash the
- *                user owns (orphaned within their sub-chain)
- *  forks       — prevHash values claimed by more than one of the user's receipts
- *  genesisCount — count of the user's receipts with NULL prevHash (should be ≤ 1)
- *  intact      — true only when all three anomaly counts are zero/normal
+ *   brokenLinks  — user's receipts whose prevHash doesn't match any chainHash
+ *                  they own (orphaned within their sub-chain)
+ *   forks        — prevHash values claimed by more than one of the user's receipts
+ *                  (indicates a concurrent-write race that produced a split)
+ *   genesisCount — count of the user's receipts with NULL prevHash (should be ≤ 1)
+ *   intact       — true only when brokenLinks === 0, forks === 0, genesisCount <= 1
  */
 async function userChainIntegrityCheck(uid: string): Promise<{
   brokenLinks: number;

@@ -378,6 +378,13 @@ paths:
       operationId: getChain
       tags: [interactions]
       summary: Get the full hash chain summary
+      description: >
+        Returns integrity metadata for the authenticated user's receipt chain.
+        `length` is the total number of the caller's receipts (full count, not
+        a windowed subset). `intact` and the fork/broken-link counts are
+        computed over all of the caller's receipts with no window limit.
+        `entries` contains the caller's most recent 100 receipts for display
+        purposes only — integrity is always verified over the full set.
       responses:
         "200":
           description: Hash chain summary
@@ -576,19 +583,43 @@ components:
 
     VerificationResult:
       type: object
+      description: >
+        Result of a multi-step cryptographic chain verification. Four independent
+        checks are performed and combined into a single `valid` verdict:
+        (1) prompt content hash re-computation,
+        (2) response content hash re-computation,
+        (3) chainHash self-consistency check (recomputed from stored promptHash,
+            responseHash, and prevHash) plus predecessor existence check plus
+            recursive-CTE ancestry walk for forks, and
+        (4) global genesis uniqueness (exactly one receipt with null prevHash).
+        `valid` is true only when all four checks pass.
       properties:
         id:
           type: string
         valid:
           type: boolean
+          description: >
+            True only when prompt hash, response hash, chainHash, predecessor
+            existence, ancestry fork detection, and genesis uniqueness all pass.
         promptHashMatch:
           type: boolean
+          description: Re-computed prompt hash matches the stored promptHash.
         responseHashMatch:
           type: boolean
+          description: Re-computed response hash matches the stored responseHash.
         chainIntact:
           type: boolean
+          description: >
+            True when: chainHash is self-consistent with stored fields; the
+            predecessor receipt exists (if prevHash is non-null); no fork is
+            detected anywhere in this receipt's ancestry; and there is exactly
+            one genesis entry globally.
         details:
           type: string
+          description: >
+            Human-readable summary. On failure, lists each specific check that
+            failed (e.g. "predecessor receipt not found", "fork detected in
+            ancestry", "multiple genesis entries").
         checkedAt:
           type: string
           format: date-time
@@ -735,10 +766,15 @@ components:
             $ref: "#/components/schemas/ActivityItem"
         chainLength:
           type: integer
-          description: Total number of receipts in the chain (full count, not a 100-entry window)
+          description: >
+            Total number of receipts in the global chain across all users
+            (full count, not a windowed subset).
         chainIntact:
           type: boolean
-          description: True only when the full chain has no broken links and no forks (checked over all receipts)
+          description: >
+            True only when the global chain (all users, all receipts) has no
+            broken links and no forks (checked over the entire chain, not a
+            windowed subset).
       required:
         - totalInteractions
         - verifiedCount
