@@ -6,12 +6,15 @@ import { Button } from "@/components/ui/button";
 
 function VerifyStep({ label, ok }: { label: string; ok: boolean }) {
   return (
-    <div className="flex items-center gap-3 py-2 border-b border-border last:border-0">
-      <div className={`flex items-center justify-center w-6 h-6 rounded-full ${ok ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-red-500/10 border border-red-500/30"}`}>
-        {ok ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <XCircle className="w-3 h-3 text-red-400" />}
+    <div className="flex items-center gap-3 py-2.5 border-b border-border last:border-0">
+      <div className={`flex items-center justify-center w-6 h-6 rounded-full flex-shrink-0 ${ok ? "bg-emerald-50 border border-emerald-200" : "bg-red-50 border border-red-200"}`}>
+        {ok ? <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> : <XCircle className="w-3.5 h-3.5 text-red-600" />}
       </div>
-      <span className={`text-xs font-mono ${ok ? "text-emerald-400" : "text-red-400"}`} data-testid={`verify-step-${label.toLowerCase().replace(/\s/g, "-")}`}>
-        {label}: {ok ? "PASS" : "FAIL"}
+      <span className={`text-sm font-medium ${ok ? "text-emerald-700" : "text-red-700"}`} data-testid={`verify-step-${label.toLowerCase().replace(/\s/g, "-")}`}>
+        {label}
+      </span>
+      <span className={`ml-auto text-xs font-bold uppercase tracking-wide ${ok ? "text-emerald-600" : "text-red-600"}`}>
+        {ok ? "Pass" : "Fail"}
       </span>
     </div>
   );
@@ -42,68 +45,82 @@ export default function VerifyReceipt() {
 
   return (
     <div className="max-w-xl mx-auto space-y-6" data-testid="verify-page">
-      <div className="flex items-center gap-2 mb-2">
-        <Search className="w-5 h-5 text-primary" />
-        <h1 className="text-xl font-bold font-mono text-foreground">Verify Receipt</h1>
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "#1B3B6F" }}>
+          <Search className="w-4 h-4 text-white" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-foreground">Verify Receipt</h1>
+          <p className="text-sm text-muted-foreground">Cryptographic hash chain integrity check</p>
+        </div>
       </div>
-      <p className="text-sm text-muted-foreground font-mono">Enter a receipt ID to verify its cryptographic hash chain integrity.</p>
 
       <div className="flex gap-3">
         <Input
           value={receiptId}
           onChange={(e) => setReceiptId(e.target.value)}
           placeholder="Enter receipt ID..."
-          className="font-mono text-sm flex-1"
+          className="text-sm flex-1"
           onKeyDown={(e) => e.key === "Enter" && handleVerify()}
           data-testid="input-receipt-id"
         />
-        <Button onClick={handleVerify} disabled={checking || !receiptId.trim()} className="font-mono text-xs gap-2" data-testid="button-run-verify">
-          {checking ? <><Loader2 className="w-3 h-3 animate-spin" />CHECKING…</> : <><Search className="w-3 h-3" />VERIFY</>}
+        <Button onClick={handleVerify} disabled={checking || !receiptId.trim()} className="gap-2 font-semibold" data-testid="button-run-verify">
+          {checking ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Checking…</> : <><Search className="w-3.5 h-3.5" />Verify</>}
         </Button>
       </div>
 
       {interaction && (
-        <div className="bg-card border border-border rounded-md p-4 font-mono text-xs space-y-2" data-testid="verify-interaction-info">
-          <div className="text-muted-foreground uppercase tracking-widest text-[10px] mb-2">RECEIPT FOUND</div>
-          <div className="grid grid-cols-2 gap-2">
-            <div><span className="text-muted-foreground">MODEL </span><span className="text-foreground">{interaction.model}</span></div>
-            <div><span className="text-muted-foreground">USER </span><span className="text-foreground">{interaction.userId}</span></div>
-            <div><span className="text-muted-foreground">DATE </span><span className="text-foreground">{new Date(interaction.createdAt).toLocaleString()}</span></div>
-            <div><span className="text-muted-foreground">POLICY </span>
-              <span className={interaction.policyStatus === "pass" ? "text-emerald-400" : interaction.policyStatus === "fail" ? "text-red-400" : "text-yellow-400"}>
-                {interaction.policyStatus.toUpperCase()}
-              </span>
+        <div className="bg-card border border-border rounded-lg p-5 space-y-3" data-testid="verify-interaction-info">
+          <div className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-3">Receipt Found</div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Model</div>
+              <div className="font-medium text-foreground">{interaction.model}</div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">User</div>
+              <div className="font-medium text-foreground">{interaction.userId}</div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Date</div>
+              <div className="font-medium text-foreground">{new Date(interaction.createdAt).toLocaleString()}</div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Policy</div>
+              <div className={`font-bold uppercase text-sm ${interaction.policyStatus === "pass" ? "text-emerald-600" : interaction.policyStatus === "fail" ? "text-red-600" : "text-amber-600"}`}>
+                {interaction.policyStatus}
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {verification && (
-        <div className={`rounded-md border p-5 space-y-3 ${verification.valid ? "bg-emerald-500/5 border-emerald-500/30" : "bg-red-500/5 border-red-500/30"}`} data-testid="verify-result">
-          <div className="flex items-center gap-3">
+        <div className={`rounded-xl border-2 p-6 space-y-4 ${verification.valid ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`} data-testid="verify-result">
+          <div className="flex items-center gap-4">
             {verification.valid
-              ? <CheckCircle className="w-8 h-8 text-emerald-400" />
-              : <XCircle className="w-8 h-8 text-red-400" />}
+              ? <CheckCircle className="w-10 h-10 text-emerald-600 flex-shrink-0" />
+              : <XCircle className="w-10 h-10 text-red-600 flex-shrink-0" />}
             <div>
-              <div className={`text-sm font-bold font-mono ${verification.valid ? "text-emerald-400" : "text-red-400"}`} data-testid="verify-overall-result">
-                {verification.valid ? "CHAIN VERIFIED" : "CHAIN INVALID"}
+              <div className={`text-lg font-bold ${verification.valid ? "text-emerald-800" : "text-red-800"}`} data-testid="verify-overall-result">
+                {verification.valid ? "Chain Verified" : "Chain Invalid"}
               </div>
-              <div className="text-xs text-muted-foreground font-mono">Checked at {new Date(verification.checkedAt).toLocaleString()}</div>
+              <div className="text-sm text-muted-foreground">Checked at {new Date(verification.checkedAt).toLocaleString()}</div>
             </div>
           </div>
-          <div className="border-t border-border pt-3">
+          <div className="border-t border-black/10 pt-3">
             <VerifyStep label="Prompt Hash" ok={verification.promptHashMatch} />
             <VerifyStep label="Response Hash" ok={verification.responseHashMatch} />
             <VerifyStep label="Chain Linkage" ok={verification.chainIntact} />
           </div>
-          <div className="text-xs font-mono text-muted-foreground pt-1" data-testid="verify-details">{verification.details}</div>
+          <div className="text-xs text-muted-foreground pt-1 font-mono" data-testid="verify-details">{verification.details}</div>
         </div>
       )}
 
       {!checking && lookupId && !interaction && (
-        <div className="bg-card border border-border rounded-md p-6 text-center font-mono text-xs text-muted-foreground" data-testid="verify-not-found">
-          <Shield className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-          Receipt not found. Check the ID and try again.
+        <div className="bg-card border-2 border-dashed border-border rounded-xl p-8 text-center" data-testid="verify-not-found">
+          <Shield className="w-10 h-10 mx-auto mb-3 text-muted-foreground/40" />
+          <div className="text-sm font-medium text-muted-foreground">Receipt not found. Check the ID and try again.</div>
         </div>
       )}
     </div>

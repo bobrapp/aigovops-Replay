@@ -167,23 +167,26 @@ export default function SpecPage() {
 
   return (
     <div className="space-y-8 pb-10" data-testid="spec-page">
-      <div>
-        <div className="flex items-center gap-3 mb-1">
-          <BookOpen className="w-5 h-5 text-primary" />
-          <h1 className="text-xl font-bold tracking-tight font-mono text-foreground">REPLAY Receipt Open Spec</h1>
-          <Badge variant="outline" className="font-mono text-xs text-emerald-400 border-emerald-500/30">v1.0.0</Badge>
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "#1B3B6F" }}>
+          <BookOpen className="w-4 h-4 text-white" />
         </div>
-        <p className="text-sm text-muted-foreground font-mono max-w-2xl">
-          The REPLAY Receipt JSON Schema is an open specification for cryptographically verifiable AI interaction records.
-          Publish it under your governance foundation — invite policy modules rather than policy PDFs.
-        </p>
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xl font-bold text-foreground">REPLAY Receipt Open Spec</h1>
+            <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-200 bg-emerald-50 font-semibold">v1.0.0</Badge>
+          </div>
+          <p className="text-sm text-muted-foreground max-w-2xl mt-0.5">
+            Open specification for cryptographically verifiable AI interaction records. Policy modules, not PDFs.
+          </p>
+        </div>
       </div>
 
       {/* Mission framing */}
-      <Card className="border-primary/20 bg-primary/5">
+      <Card className="border-primary/20" style={{ background: "#1B3B6F" }}>
         <CardContent className="p-5">
-          <p className="text-sm font-mono text-foreground leading-relaxed">
-            <span className="text-primary font-bold">Why this exists:</span>{" "}
+          <p className="text-sm text-white/90 leading-relaxed">
+            <span className="text-white font-bold">Why this exists:</span>{" "}
             AI governance today is a stack of PDFs. REPLAY turns it into executable evidence —
             every interaction gets a receipt, every receipt gets chained, every chain is independently verifiable.
             The schema is open so anyone can build a compliant logger. The policy modules are open
@@ -197,7 +200,7 @@ export default function SpecPage() {
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Code2 className="w-4 h-4 text-primary" />
-            <span className="text-xs text-muted-foreground uppercase tracking-widest font-mono">HASH-CHAIN ALGORITHM</span>
+            <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Hash-Chain Algorithm</span>
           </div>
           <CopyButton text={CHAIN_ALGORITHM} />
         </div>
@@ -209,8 +212,8 @@ export default function SpecPage() {
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-primary" />
-            <span className="text-xs text-muted-foreground uppercase tracking-widest font-mono">RECEIPT JSON SCHEMA</span>
-            <span className="text-xs text-muted-foreground font-mono">— JSON Schema 2020-12</span>
+            <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Receipt JSON Schema</span>
+            <span className="text-xs text-muted-foreground">— JSON Schema 2020-12</span>
           </div>
           <CopyButton text={schemaText} />
         </div>
@@ -221,13 +224,13 @@ export default function SpecPage() {
       <div>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <Package className="w-4 h-4 text-cyan-400" />
-            <span className="text-xs text-muted-foreground uppercase tracking-widest font-mono">COMMUNITY POLICY MODULE</span>
-            <Badge variant="outline" className="font-mono text-xs text-cyan-400 border-cyan-500/30">EU AI Act 2024/1689</Badge>
+            <Package className="w-4 h-4 text-sky-600" />
+            <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Community Policy Module</span>
+            <Badge variant="outline" className="text-xs text-sky-700 border-sky-200 bg-sky-50 font-semibold">EU AI Act 2024/1689</Badge>
           </div>
           <CopyButton text={EU_AI_ACT_MODULE} />
         </div>
-        <p className="text-xs text-muted-foreground font-mono mb-3">
+        <p className="text-sm text-muted-foreground mb-3">
           Drop-in policy module aligning with EU AI Act Art. 12 (Record-Keeping) and Art. 13 (Transparency) for high-risk AI systems.
           Each rule is a JS expression evaluated against <code className="text-primary">&#123; prompt, response, model, userId &#125;</code>.
         </p>
@@ -237,21 +240,21 @@ export default function SpecPage() {
       {/* Contribute */}
       <Card className="border-border bg-card">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-mono text-foreground flex items-center gap-2">
+          <CardTitle className="text-sm font-bold text-foreground flex items-center gap-2">
             <ExternalLink className="w-4 h-4 text-primary" />
-            CONTRIBUTE A POLICY MODULE
+            Contribute a Policy Module
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3 text-xs font-mono text-muted-foreground">
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
           <p>Policy modules are plain JS arrays of rule objects. Each rule needs:</p>
-          <div className="bg-background border border-border rounded p-3 space-y-1 text-foreground">
-            <div><span className="text-primary">name</span>        — unique identifier (e.g. "NIST-AI-RMF/Govern-1.1")</div>
-            <div><span className="text-primary">description</span>  — human-readable explanation</div>
-            <div><span className="text-primary">severity</span>     — "critical" | "high" | "medium" | "low"</div>
-            <div><span className="text-primary">rule</span>         — JS expression returning boolean; ctx: &#123; prompt, response, model, userId &#125;</div>
+          <div className="bg-muted border border-border rounded-lg p-3 space-y-1.5 font-mono text-xs text-foreground">
+            <div><span className="text-primary font-semibold">name</span>        — unique identifier (e.g. "NIST-AI-RMF/Govern-1.1")</div>
+            <div><span className="text-primary font-semibold">description</span>  — human-readable explanation</div>
+            <div><span className="text-primary font-semibold">severity</span>     — "critical" | "high" | "medium" | "low"</div>
+            <div><span className="text-primary font-semibold">rule</span>         — JS expression returning boolean; ctx: &#123; prompt, response, model, userId &#125;</div>
           </div>
-          <p className="text-muted-foreground">
-            Early targets: <span className="text-foreground">NIST AI RMF Govern</span> · <span className="text-foreground">ISO 42001</span> · <span className="text-foreground">HIPAA AI Addendum</span> · <span className="text-foreground">SOC 2 AI logging</span>
+          <p className="text-muted-foreground text-sm">
+            Early targets: <span className="font-semibold text-foreground">NIST AI RMF Govern</span> · <span className="font-semibold text-foreground">ISO 42001</span> · <span className="font-semibold text-foreground">HIPAA AI Addendum</span> · <span className="font-semibold text-foreground">SOC 2 AI logging</span>
           </p>
         </CardContent>
       </Card>

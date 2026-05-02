@@ -54,17 +54,21 @@ export default function CreatePolicy() {
     <div className="max-w-xl mx-auto space-y-6" data-testid="create-policy-page">
       <div className="flex items-center gap-2 mb-2">
         <Link href="/policies">
-          <Button variant="ghost" size="sm" className="font-mono text-xs gap-1 text-muted-foreground hover:text-foreground" data-testid="button-back-policies">
-            <ChevronLeft className="w-3 h-3" />POLICIES
+          <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground font-medium" data-testid="button-back-policies">
+            <ChevronLeft className="w-4 h-4" />Policies
           </Button>
         </Link>
       </div>
 
-      <div className="flex items-center gap-2">
-        <ShieldAlert className="w-5 h-5 text-primary" />
-        <h1 className="text-xl font-bold font-mono text-foreground">New Policy Rule</h1>
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "#1B3B6F" }}>
+          <ShieldAlert className="w-4 h-4 text-white" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-foreground">New Policy Rule</h1>
+          <p className="text-sm text-muted-foreground">Rules are evaluated against every new interaction receipt.</p>
+        </div>
       </div>
-      <p className="text-sm text-muted-foreground font-mono">Define a policy-as-code rule. Rules are evaluated against every new interaction receipt.</p>
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
@@ -73,9 +77,9 @@ export default function CreatePolicy() {
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Name</FormLabel>
+                <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Name</FormLabel>
                 <FormControl>
-                  <Input {...field} placeholder="e.g. No PII in Prompts" className="font-mono text-sm" data-testid="input-policy-name" />
+                  <Input {...field} placeholder="e.g. No PII in Prompts" className="text-sm" data-testid="input-policy-name" />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -86,9 +90,9 @@ export default function CreatePolicy() {
             name="description"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Description</FormLabel>
+                <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Description</FormLabel>
                 <FormControl>
-                  <Textarea {...field} rows={2} placeholder="What does this policy check?" className="font-mono text-sm resize-none" data-testid="input-policy-description" />
+                  <Textarea {...field} rows={2} placeholder="What does this policy check?" className="text-sm resize-none" data-testid="input-policy-description" />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -99,7 +103,7 @@ export default function CreatePolicy() {
             name="rule"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Rule Expression</FormLabel>
+                <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Rule Expression</FormLabel>
                 <FormControl>
                   <Textarea {...field} rows={3} placeholder="e.g. prompt.length < 4096 && !prompt.includes('password')" className="font-mono text-sm resize-none" data-testid="input-policy-rule" />
                 </FormControl>
@@ -112,10 +116,10 @@ export default function CreatePolicy() {
             name="severity"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Severity</FormLabel>
+                <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Severity</FormLabel>
                 <Select onValueChange={field.onChange} defaultValue={field.value}>
                   <FormControl>
-                    <SelectTrigger className="font-mono text-sm" data-testid="select-policy-severity">
+                    <SelectTrigger className="text-sm" data-testid="select-policy-severity">
                       <SelectValue placeholder="Select severity" />
                     </SelectTrigger>
                   </FormControl>
@@ -130,8 +134,8 @@ export default function CreatePolicy() {
               </FormItem>
             )}
           />
-          <Button type="submit" disabled={createPolicy.isPending} className="w-full font-mono text-xs gap-2" data-testid="button-create-policy">
-            {createPolicy.isPending ? <><Loader2 className="w-3 h-3 animate-spin" />CREATING…</> : <><ShieldAlert className="w-3 h-3" />CREATE POLICY</>}
+          <Button type="submit" disabled={createPolicy.isPending} className="w-full gap-2 font-semibold" data-testid="button-create-policy">
+            {createPolicy.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Creating…</> : <><ShieldAlert className="w-4 h-4" />Create Policy</>}
           </Button>
         </form>
       </Form>

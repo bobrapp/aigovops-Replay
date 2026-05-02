@@ -127,15 +127,19 @@ export default function DemoPage() {
 
   return (
     <div className="space-y-6 max-w-2xl" data-testid="demo-page">
-      <div>
-        <div className="flex items-center gap-3 mb-1">
-          <Zap className="w-5 h-5 text-yellow-400" />
-          <h1 className="text-xl font-bold tracking-tight font-mono text-foreground">LIVE DEMO</h1>
-          <span className="text-xs bg-yellow-400/10 text-yellow-400 border border-yellow-400/20 px-2 py-0.5 rounded font-mono">4-STEP</span>
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-amber-500">
+          <Zap className="w-4 h-4 text-white" />
         </div>
-        <p className="text-sm text-muted-foreground font-mono">
-          Run a prompt → get a receipt → verify the hash → replay it.
-        </p>
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xl font-bold text-foreground">Live Demo</h1>
+            <span className="text-[11px] bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide">4 Steps</span>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Run a prompt → get a receipt → verify the hash → replay it.
+          </p>
+        </div>
       </div>
 
       {/* Progress */}

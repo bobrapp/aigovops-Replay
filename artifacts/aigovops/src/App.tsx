@@ -34,15 +34,10 @@ function Router() {
   return (
     <Layout>
       <Switch>
-        {/* Root: mode-aware home */}
         <Route path="/" component={isSimple ? SimpleHome : Dashboard} />
-
-        {/* Simple-mode routes */}
         <Route path="/record" component={SimpleRecord} />
         <Route path="/history" component={SimpleHistory} />
         <Route path="/check" component={SimpleCheck} />
-
-        {/* Expert routes always available */}
         <Route path="/demo" component={DemoPage} />
         <Route path="/receipts" component={ReceiptsList} />
         <Route path="/receipts/new" component={SubmitReceipt} />
@@ -60,7 +55,7 @@ function Router() {
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="aigovops-theme">
+    <ThemeProvider defaultTheme="light" storageKey="aigovops-theme">
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <ModeProvider>

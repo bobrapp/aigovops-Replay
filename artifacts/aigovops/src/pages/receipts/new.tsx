@@ -69,27 +69,27 @@ export default function SubmitReceipt() {
       <div className="max-w-lg mx-auto space-y-6" data-testid="receipt-minted-success">
         <div className="text-center space-y-4 py-8">
           <div className="flex justify-center">
-            <CheckCircle2 className="w-16 h-16 text-emerald-400 animate-in zoom-in duration-300" />
+            <CheckCircle2 className="w-16 h-16 text-emerald-500 animate-in zoom-in duration-300" />
           </div>
-          <h2 className="text-xl font-bold font-mono text-foreground">RECEIPT MINTED</h2>
-          <p className="text-sm text-muted-foreground font-mono">Cryptographic receipt has been sealed and added to the chain.</p>
+          <h2 className="text-2xl font-bold text-foreground">Receipt Minted</h2>
+          <p className="text-muted-foreground">Cryptographic receipt sealed and added to the chain.</p>
         </div>
-        <div className="bg-card border border-emerald-500/30 rounded-md p-4 font-mono text-xs space-y-2">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">RECEIPT ID</span>
-            <span className="text-foreground truncate max-w-[60%]" data-testid="minted-receipt-id">{minted.id}</span>
+        <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-5 space-y-3">
+          <div className="flex justify-between items-center">
+            <span className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Receipt ID</span>
+            <span className="text-sm text-foreground font-mono truncate max-w-[60%]" data-testid="minted-receipt-id">{minted.id}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">CHAIN HASH</span>
-            <span className="text-primary truncate max-w-[60%]" data-testid="minted-chain-hash">{minted.chainHash.slice(0, 32)}…</span>
+          <div className="flex justify-between items-center">
+            <span className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Chain Hash</span>
+            <span className="text-sm text-primary font-mono truncate max-w-[60%]" data-testid="minted-chain-hash">{minted.chainHash.slice(0, 32)}…</span>
           </div>
         </div>
         <div className="flex gap-3">
-          <Button className="flex-1 font-mono text-xs" onClick={() => setLocation(`/receipts/${minted.id}`)} data-testid="button-view-receipt">
-            VIEW RECEIPT
+          <Button className="flex-1 gap-2 font-semibold" onClick={() => setLocation(`/receipts/${minted.id}`)} data-testid="button-view-receipt">
+            View Receipt
           </Button>
-          <Button variant="outline" className="flex-1 font-mono text-xs" onClick={() => { setMinted(null); form.reset(); }} data-testid="button-mint-another">
-            MINT ANOTHER
+          <Button variant="outline" className="flex-1 font-semibold" onClick={() => { setMinted(null); form.reset(); }} data-testid="button-mint-another">
+            Mint Another
           </Button>
         </div>
       </div>
@@ -98,11 +98,15 @@ export default function SubmitReceipt() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6" data-testid="submit-receipt-page">
-      <div className="flex items-center gap-2 mb-2">
-        <Stamp className="w-5 h-5 text-primary" />
-        <h1 className="text-xl font-bold font-mono text-foreground">Mint Receipt</h1>
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "#1B3B6F" }}>
+          <Stamp className="w-4 h-4 text-white" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-foreground">Mint Receipt</h1>
+          <p className="text-sm text-muted-foreground">Submit an AI interaction to create a cryptographically signed, hash-chained receipt.</p>
+        </div>
       </div>
-      <p className="text-sm text-muted-foreground font-mono">Submit an AI interaction to create a cryptographically signed, hash-chained receipt.</p>
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
@@ -111,9 +115,9 @@ export default function SubmitReceipt() {
             name="prompt"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Prompt</FormLabel>
+                <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Prompt</FormLabel>
                 <FormControl>
-                  <Textarea {...field} rows={4} placeholder="Enter the AI prompt..." className="font-mono text-sm resize-none" data-testid="input-prompt" />
+                  <Textarea {...field} rows={4} placeholder="Enter the AI prompt..." className="text-sm resize-none" data-testid="input-prompt" />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -124,9 +128,9 @@ export default function SubmitReceipt() {
             name="response"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Response</FormLabel>
+                <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Response</FormLabel>
                 <FormControl>
-                  <Textarea {...field} rows={6} placeholder="Paste the AI response..." className="font-mono text-sm resize-none" data-testid="input-response" />
+                  <Textarea {...field} rows={6} placeholder="Paste the AI response..." className="text-sm resize-none" data-testid="input-response" />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -138,9 +142,9 @@ export default function SubmitReceipt() {
               name="model"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Model</FormLabel>
+                  <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Model</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="gpt-4o, claude-3-5..." className="font-mono text-sm" data-testid="input-model" />
+                    <Input {...field} placeholder="gpt-4o, claude-3-5..." className="text-sm" data-testid="input-model" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -151,9 +155,9 @@ export default function SubmitReceipt() {
               name="userId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">User ID</FormLabel>
+                  <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">User ID</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="user-001" className="font-mono text-sm" data-testid="input-user-id" />
+                    <Input {...field} placeholder="user-001" className="text-sm" data-testid="input-user-id" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -165,16 +169,16 @@ export default function SubmitReceipt() {
             name="tags"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Tags (comma-separated)</FormLabel>
+                <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Tags (comma-separated)</FormLabel>
                 <FormControl>
-                  <Input {...field} placeholder="production, legal, high-risk" className="font-mono text-sm" data-testid="input-tags" />
+                  <Input {...field} placeholder="production, legal, high-risk" className="text-sm" data-testid="input-tags" />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
-          <Button type="submit" disabled={minting} className="w-full font-mono text-xs gap-2" data-testid="button-submit-receipt">
-            {minting ? <><Loader2 className="w-3 h-3 animate-spin" />MINTING RECEIPT…</> : <><Stamp className="w-3 h-3" />MINT RECEIPT</>}
+          <Button type="submit" disabled={minting} className="w-full gap-2 font-semibold" data-testid="button-submit-receipt">
+            {minting ? <><Loader2 className="w-4 h-4 animate-spin" />Minting Receipt…</> : <><Stamp className="w-4 h-4" />Mint Receipt</>}
           </Button>
         </form>
       </Form>
