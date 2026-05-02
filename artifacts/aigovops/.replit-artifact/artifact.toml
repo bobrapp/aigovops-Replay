@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "AIGovOps REPLAY"
+version = "1.0.0"
+id = "artifacts/aigovops"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25781
+
+[services.development]
+run = "pnpm --filter @workspace/aigovops run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/aigovops", "run", "build" ]
+publicDir = "artifacts/aigovops/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25781"
+BASE_PATH = "/"

@@ -3,13 +3,19 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: AIGovOps REPLAY API - cryptographically signed AI interaction receipts
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: interactions
+    description: AI interaction receipt operations
+  - name: policies
+    description: Policy-as-code rule operations
+  - name: stats
+    description: Dashboard statistics
 paths:
   /healthz:
     get:
@@ -24,6 +30,227 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /interactions:
+    get:
+      operationId: listInteractions
+      tags: [interactions]
+      summary: List all interaction receipts
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: model
+          in: query
+          schema:
+            type: string
+        - name: policyStatus
+          in: query
+          schema:
+            type: string
+            enum: [pass, fail, pending]
+      responses:
+        "200":
+          description: List of interaction receipts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InteractionList"
+    post:
+      operationId: createInteraction
+      tags: [interactions]
+      summary: Create a new AI interaction receipt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInteractionBody"
+      responses:
+        "201":
+          description: Created interaction receipt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Interaction"
+
+  /interactions/{id}:
+    get:
+      operationId: getInteraction
+      tags: [interactions]
+      summary: Get a single interaction receipt
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Interaction receipt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Interaction"
+        "404":
+          description: Not found
+
+  /interactions/{id}/verify:
+    get:
+      operationId: verifyInteraction
+      tags: [interactions]
+      summary: Verify the cryptographic chain for a receipt
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationResult"
+
+  /interactions/{id}/replay:
+    post:
+      operationId: replayInteraction
+      tags: [interactions]
+      summary: Replay an interaction and compare outputs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Replay result with diff
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayResult"
+
+  /policies:
+    get:
+      operationId: listPolicies
+      tags: [policies]
+      summary: List all policy rules
+      responses:
+        "200":
+          description: List of policies
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyList"
+    post:
+      operationId: createPolicy
+      tags: [policies]
+      summary: Create a new policy rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePolicyBody"
+      responses:
+        "201":
+          description: Created policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+
+  /policies/{id}:
+    get:
+      operationId: getPolicy
+      tags: [policies]
+      summary: Get a single policy rule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+    patch:
+      operationId: updatePolicy
+      tags: [policies]
+      summary: Update a policy rule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePolicyBody"
+      responses:
+        "200":
+          description: Updated policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+    delete:
+      operationId: deletePolicy
+      tags: [policies]
+      summary: Delete a policy rule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /stats:
+    get:
+      operationId: getStats
+      tags: [stats]
+      summary: Get dashboard statistics
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stats"
+
+  /chain:
+    get:
+      operationId: getChain
+      tags: [interactions]
+      summary: Get the full hash chain summary
+      responses:
+        "200":
+          description: Hash chain summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChainSummary"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +261,327 @@ components:
       required:
         - status
 
+    Interaction:
+      type: object
+      properties:
+        id:
+          type: string
+        prompt:
+          type: string
+        response:
+          type: string
+        model:
+          type: string
+        userId:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        promptHash:
+          type: string
+        responseHash:
+          type: string
+        prevHash:
+          type: string
+          nullable: true
+        chainHash:
+          type: string
+        policyStatus:
+          type: string
+          enum: [pass, fail, pending]
+        policyViolations:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        replayCount:
+          type: integer
+      required:
+        - id
+        - prompt
+        - response
+        - model
+        - userId
+        - tags
+        - promptHash
+        - responseHash
+        - chainHash
+        - policyStatus
+        - policyViolations
+        - createdAt
+        - replayCount
+
+    InteractionList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Interaction"
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required:
+        - items
+        - total
+        - limit
+        - offset
+
+    CreateInteractionBody:
+      type: object
+      properties:
+        prompt:
+          type: string
+        response:
+          type: string
+        model:
+          type: string
+        userId:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+      required:
+        - prompt
+        - response
+        - model
+        - userId
+
+    VerificationResult:
+      type: object
+      properties:
+        id:
+          type: string
+        valid:
+          type: boolean
+        promptHashMatch:
+          type: boolean
+        responseHashMatch:
+          type: boolean
+        chainIntact:
+          type: boolean
+        details:
+          type: string
+        checkedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - valid
+        - promptHashMatch
+        - responseHashMatch
+        - chainIntact
+        - details
+        - checkedAt
+
+    ReplayResult:
+      type: object
+      properties:
+        originalId:
+          type: string
+        originalResponse:
+          type: string
+        replayedResponse:
+          type: string
+        outputDiff:
+          type: string
+        semanticMatch:
+          type: boolean
+        replayedAt:
+          type: string
+          format: date-time
+        newReceiptId:
+          type: string
+      required:
+        - originalId
+        - originalResponse
+        - replayedResponse
+        - outputDiff
+        - semanticMatch
+        - replayedAt
+        - newReceiptId
+
+    Policy:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        rule:
+          type: string
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        enabled:
+          type: boolean
+        violationCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - description
+        - rule
+        - severity
+        - enabled
+        - violationCount
+        - createdAt
+        - updatedAt
+
+    PolicyList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Policy"
+        total:
+          type: integer
+      required:
+        - items
+        - total
+
+    CreatePolicyBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        rule:
+          type: string
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        enabled:
+          type: boolean
+      required:
+        - name
+        - description
+        - rule
+        - severity
+
+    UpdatePolicyBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        rule:
+          type: string
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        enabled:
+          type: boolean
+
+    Stats:
+      type: object
+      properties:
+        totalInteractions:
+          type: integer
+        verifiedCount:
+          type: integer
+        policyPassCount:
+          type: integer
+        policyFailCount:
+          type: integer
+        replayCount:
+          type: integer
+        modelsUsed:
+          type: array
+          items:
+            type: string
+        recentActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityItem"
+        chainLength:
+          type: integer
+        chainIntact:
+          type: boolean
+      required:
+        - totalInteractions
+        - verifiedCount
+        - policyPassCount
+        - policyFailCount
+        - replayCount
+        - modelsUsed
+        - recentActivity
+        - chainLength
+        - chainIntact
+
+    ActivityItem:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [created, replayed, verified, policy_check]
+        interactionId:
+          type: string
+        summary:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - type
+        - interactionId
+        - summary
+        - createdAt
+
+    ChainSummary:
+      type: object
+      properties:
+        length:
+          type: integer
+        headHash:
+          type: string
+        tailHash:
+          type: string
+          nullable: true
+        intact:
+          type: boolean
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              chainHash:
+                type: string
+              prevHash:
+                type: string
+                nullable: true
+              createdAt:
+                type: string
+                format: date-time
+            required:
+              - id
+              - chainHash
+              - createdAt
+      required:
+        - length
+        - headHash
+        - intact
+        - entries
