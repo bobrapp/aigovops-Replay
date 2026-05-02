@@ -21,6 +21,7 @@ import CreatePolicy from "./pages/policies/new";
 import VerifyReceipt from "./pages/verify";
 import DemoPage from "./pages/demo";
 import SpecPage from "./pages/spec";
+import AgentsPage from "./pages/agents";
 
 // Simple pages
 import SimpleHome from "./pages/simple/home";
@@ -208,6 +209,7 @@ function Router() {
         <Route path="/receipts/new" component={SubmitReceipt} />
         <Route path="/receipts/:id" component={ReceiptDetail} />
         <Route path="/chain" component={ChainView} />
+        <Route path="/agents" component={AgentsPage} />
         <Route path="/policies" component={PoliciesList} />
         <Route path="/policies/new" component={CreatePolicy} />
         <Route path="/verify" component={VerifyReceipt} />
