@@ -9,6 +9,41 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+/**
+ * Build the CORS origin allowlist from environment variables set by Replit.
+ *
+ * - REPLIT_DOMAINS: comma-separated production domains (e.g. "foo.replit.app")
+ * - REPLIT_DEV_DOMAIN: the per-Repl development preview hostname
+ *
+ * Any unrecognised origin is silently blocked; credentials are never
+ * reflected to arbitrary origins, closing the cross-origin credentialed
+ * request vector described in the security scan.
+ */
+function buildAllowedOrigins(): (string | RegExp)[] {
+  const origins: (string | RegExp)[] = [];
+
+  const replitDomains = process.env.REPLIT_DOMAINS;
+  if (replitDomains) {
+    for (const d of replitDomains.split(",").map(s => s.trim()).filter(Boolean)) {
+      origins.push(`https://${d}`);
+    }
+  }
+
+  const devDomain = process.env.REPLIT_DEV_DOMAIN;
+  if (devDomain) {
+    origins.push(`https://${devDomain}`);
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    origins.push(/^https?:\/\/localhost(:\d+)?$/);
+    origins.push(/^https?:\/\/127\.0\.0\.1(:\d+)?$/);
+  }
+
+  return origins;
+}
+
+const allowedOrigins = buildAllowedOrigins();
+
 app.use(
   pinoHttp({
     logger,
@@ -28,7 +63,12 @@ app.use(
     },
   }),
 );
-app.use(cors({ credentials: true, origin: true }));
+app.use(
+  cors({
+    credentials: true,
+    origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+  }),
+);
 app.use(cookieParser());
 
 /**

@@ -260,10 +260,19 @@ export const ListPoliciesResponse = zod.object({
  * Requires admin privilege (caller's user ID must be in the ADMIN_USER_IDS server environment variable).
  * @summary Create a new policy rule
  */
+
+export const createPolicyBodyRuleMax = 500;
+
 export const CreatePolicyBody = zod.object({
-  name: zod.string(),
-  description: zod.string(),
-  rule: zod.string(),
+  name: zod.string().min(1),
+  description: zod.string().min(1),
+  rule: zod
+    .string()
+    .min(1)
+    .max(createPolicyBodyRuleMax)
+    .describe(
+      "A safe expression evaluated against each new interaction receipt. Allowed variables: prompt, response, model, userId. Allowed operators: &&, ||, !, ===, !==, <, >, <=, >=, typeof. Allowed string methods: .includes(), .startsWith(), .endsWith(), .toLowerCase(), .toUpperCase(), .trim(), .split(), .length. No code execution: eval, new Function, process, require, and globalThis are not reachable. Maximum 500 characters.\n",
+    ),
   severity: zod.enum(["low", "medium", "high", "critical"]),
   enabled: zod.boolean().optional(),
 });
@@ -294,10 +303,19 @@ export const UpdatePolicyParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const updatePolicyBodyRuleMax = 500;
+
 export const UpdatePolicyBody = zod.object({
-  name: zod.string().optional(),
-  description: zod.string().optional(),
-  rule: zod.string().optional(),
+  name: zod.string().min(1).optional(),
+  description: zod.string().min(1).optional(),
+  rule: zod
+    .string()
+    .min(1)
+    .max(updatePolicyBodyRuleMax)
+    .optional()
+    .describe(
+      "A safe expression evaluated against each new interaction receipt. Allowed variables: prompt, response, model, userId. Allowed operators: &&, ||, !, ===, !==, <, >, <=, >=, typeof. Allowed string methods: .includes(), .startsWith(), .endsWith(), .toLowerCase(), .toUpperCase(), .trim(), .split(), .length. No code execution: eval, new Function, process, require, and globalThis are not reachable. Maximum 500 characters.\n",
+    ),
   severity: zod.enum(["low", "medium", "high", "critical"]).optional(),
   enabled: zod.boolean().optional(),
 });

@@ -163,8 +163,16 @@ export const CreatePolicyBodySeverity = {
 } as const;
 
 export interface CreatePolicyBody {
+  /** @minLength 1 */
   name: string;
+  /** @minLength 1 */
   description: string;
+  /**
+   * A safe expression evaluated against each new interaction receipt. Allowed variables: prompt, response, model, userId. Allowed operators: &&, ||, !, ===, !==, <, >, <=, >=, typeof. Allowed string methods: .includes(), .startsWith(), .endsWith(), .toLowerCase(), .toUpperCase(), .trim(), .split(), .length. No code execution: eval, new Function, process, require, and globalThis are not reachable. Maximum 500 characters.
+
+   * @minLength 1
+   * @maxLength 500
+   */
   rule: string;
   severity: CreatePolicyBodySeverity;
   enabled?: boolean;
@@ -181,8 +189,16 @@ export const UpdatePolicyBodySeverity = {
 } as const;
 
 export interface UpdatePolicyBody {
+  /** @minLength 1 */
   name?: string;
+  /** @minLength 1 */
   description?: string;
+  /**
+   * A safe expression evaluated against each new interaction receipt. Allowed variables: prompt, response, model, userId. Allowed operators: &&, ||, !, ===, !==, <, >, <=, >=, typeof. Allowed string methods: .includes(), .startsWith(), .endsWith(), .toLowerCase(), .toUpperCase(), .trim(), .split(), .length. No code execution: eval, new Function, process, require, and globalThis are not reachable. Maximum 500 characters.
+
+   * @minLength 1
+   * @maxLength 500
+   */
   rule?: string;
   severity?: UpdatePolicyBodySeverity;
   enabled?: boolean;

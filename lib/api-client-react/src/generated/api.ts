@@ -1357,7 +1357,7 @@ export const updatePolicy = async (
 };
 
 export const getUpdatePolicyMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1398,13 +1398,13 @@ export type UpdatePolicyMutationResult = NonNullable<
   Awaited<ReturnType<typeof updatePolicy>>
 >;
 export type UpdatePolicyMutationBody = BodyType<UpdatePolicyBody>;
-export type UpdatePolicyMutationError = ErrorType<unknown>;
+export type UpdatePolicyMutationError = ErrorType<void>;
 
 /**
  * @summary Update a policy rule
  */
 export const useUpdatePolicy = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
