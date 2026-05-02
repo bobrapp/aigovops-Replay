@@ -406,15 +406,17 @@ router.post("/interactions/:id/replay", requireAuth, async (req, res) => {
   });
 });
 
-router.get("/chain", requireAuth, async (_req, res) => {
+router.get("/chain", requireAuth, async (req, res) => {
+  const uid = userId(req);
+
   const [totalCountResult, chainStatus] = await Promise.all([
-    db.select({ cnt: count() }).from(interactionsTable),
+    db.select({ cnt: count() }).from(interactionsTable).where(eq(interactionsTable.userId, uid)),
     fullChainIntegrityCheck(),
   ]);
 
   const totalCount = Number(totalCountResult[0]?.cnt ?? 0);
 
-  // Return most recent 100 entries for display — integrity is verified over the full chain above
+  // Return most recent 100 of the caller's own entries — integrity is verified over the full chain above
   const entries = await db
     .select({
       id: interactionsTable.id,
@@ -423,6 +425,7 @@ router.get("/chain", requireAuth, async (_req, res) => {
       createdAt: interactionsTable.createdAt,
     })
     .from(interactionsTable)
+    .where(eq(interactionsTable.userId, uid))
     .orderBy(desc(interactionsTable.createdAt))
     .limit(100);
 
@@ -446,23 +449,36 @@ router.get("/chain", requireAuth, async (_req, res) => {
   });
 });
 
-router.get("/stats", requireAuth, async (_req, res) => {
+router.get("/stats", requireAuth, async (req, res) => {
+  const uid = userId(req);
+
   const [totalResult, policyPassResult, policyFailResult, replayResult, chainStatus] = await Promise.all([
-    db.select({ count: count() }).from(interactionsTable),
-    db.select({ count: count() }).from(interactionsTable).where(eq(interactionsTable.policyStatus, "pass")),
-    db.select({ count: count() }).from(interactionsTable).where(eq(interactionsTable.policyStatus, "fail")),
-    db.select({ count: sql<number>`sum(${interactionsTable.replayCount})` }).from(interactionsTable),
+    db.select({ count: count() }).from(interactionsTable).where(eq(interactionsTable.userId, uid)),
+    db.select({ count: count() }).from(interactionsTable).where(and(eq(interactionsTable.userId, uid), eq(interactionsTable.policyStatus, "pass"))),
+    db.select({ count: count() }).from(interactionsTable).where(and(eq(interactionsTable.userId, uid), eq(interactionsTable.policyStatus, "fail"))),
+    db.select({ count: sql<number>`sum(${interactionsTable.replayCount})` }).from(interactionsTable).where(eq(interactionsTable.userId, uid)),
     fullChainIntegrityCheck(),
   ]);
 
   const modelsResult = await db
     .selectDistinct({ model: interactionsTable.model })
     .from(interactionsTable)
+    .where(eq(interactionsTable.userId, uid))
     .limit(200);
 
+  // Filter recent activity to the caller's own receipts by joining through the interactions table.
+  // activity_log has no owner column; ownership is inferred from the linked interaction's userId.
   const recentActivity = await db
-    .select()
+    .select({
+      id: activityLogTable.id,
+      type: activityLogTable.type,
+      interactionId: activityLogTable.interactionId,
+      summary: activityLogTable.summary,
+      createdAt: activityLogTable.createdAt,
+    })
     .from(activityLogTable)
+    .innerJoin(interactionsTable, eq(activityLogTable.interactionId, interactionsTable.id))
+    .where(eq(interactionsTable.userId, uid))
     .orderBy(desc(activityLogTable.createdAt))
     .limit(10);
 

@@ -15,7 +15,7 @@ import { requireAdminAuth } from "./admin";
 
 const router: IRouter = Router();
 
-router.get("/policies", requireAuth, async (_req, res) => {
+router.get("/policies", requireAuth, requireAdminAuth, async (_req, res) => {
   const items = await db.select().from(policiesTable);
   const [totalResult] = await db.select({ count: count() }).from(policiesTable);
 
@@ -52,7 +52,7 @@ router.post("/policies", requireAuth, requireAdminAuth, async (req, res) => {
   res.status(201).json(toPolicyDto(policy));
 });
 
-router.get("/policies/:id", requireAuth, async (req, res) => {
+router.get("/policies/:id", requireAuth, requireAdminAuth, async (req, res) => {
   const { id } = GetPolicyParams.parse(req.params);
   const [policy] = await db.select().from(policiesTable).where(eq(policiesTable.id, id));
 
