@@ -11,7 +11,7 @@ import {
 import { generateId } from "../lib/id";
 import { validatePolicyRule } from "../lib/policy-eval";
 import { requireAuth } from "../middlewares/requireAuth";
-import { requireAdmin } from "../middlewares/requireAdmin";
+import { requireAdminAuth } from "./admin";
 
 const router: IRouter = Router();
 
@@ -25,7 +25,7 @@ router.get("/policies", requireAuth, async (_req, res) => {
   });
 });
 
-router.post("/policies", requireAuth, requireAdmin, async (req, res) => {
+router.post("/policies", requireAuth, requireAdminAuth, async (req, res) => {
   const body = CreatePolicyBody.parse(req.body);
 
   const ruleError = validatePolicyRule(body.rule);
@@ -64,7 +64,7 @@ router.get("/policies/:id", requireAuth, async (req, res) => {
   res.json(toPolicyDto(policy));
 });
 
-router.patch("/policies/:id", requireAuth, requireAdmin, async (req, res) => {
+router.patch("/policies/:id", requireAuth, requireAdminAuth, async (req, res) => {
   const { id } = UpdatePolicyParams.parse(req.params);
   const body = UpdatePolicyBody.parse(req.body);
 
@@ -100,7 +100,7 @@ router.patch("/policies/:id", requireAuth, requireAdmin, async (req, res) => {
   res.json(toPolicyDto(policy));
 });
 
-router.delete("/policies/:id", requireAuth, requireAdmin, async (req, res) => {
+router.delete("/policies/:id", requireAuth, requireAdminAuth, async (req, res) => {
   const { id } = DeletePolicyParams.parse(req.params);
   await db.delete(policiesTable).where(eq(policiesTable.id, id));
   res.status(204).send();
