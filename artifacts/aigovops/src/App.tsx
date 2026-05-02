@@ -6,9 +6,7 @@ import NotFound from "@/pages/not-found";
 import { ThemeProvider } from "./components/theme-provider";
 import { Layout } from "./components/layout";
 import { ModeProvider, useMode } from "./context/mode";
-import { setAuthTokenGetter } from "@workspace/api-client-react";
-
-setAuthTokenGetter(() => import.meta.env.VITE_ADMIN_API_KEY ?? null);
+import { AdminAuthProvider } from "./context/adminAuth";
 
 // Expert pages
 import Dashboard from "./pages/dashboard";
@@ -61,11 +59,13 @@ function App() {
     <ThemeProvider defaultTheme="light" storageKey="aigovops-theme">
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <ModeProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <Router />
-            </WouterRouter>
-          </ModeProvider>
+          <AdminAuthProvider>
+            <ModeProvider>
+              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                <Router />
+              </WouterRouter>
+            </ModeProvider>
+          </AdminAuthProvider>
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>

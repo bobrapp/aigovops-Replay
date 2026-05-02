@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
+import { Router, type IRouter } from "express";
 import { db, policiesTable } from "@workspace/db";
 import { eq, count } from "drizzle-orm";
 import {
@@ -10,38 +10,9 @@ import {
 } from "@workspace/api-zod";
 import { generateId } from "../lib/id";
 import { validatePolicyRule } from "../lib/policy-eval";
+import { requireAdminAuth } from "./admin";
 
 const router: IRouter = Router();
-
-/**
- * Require a valid admin bearer token for policy-mutation endpoints.
- *
- * Token is read from the ADMIN_API_KEY environment variable and must be
- * supplied as `Authorization: Bearer <token>` in the request.
- *
- * This guard prevents unauthenticated callers from creating or modifying
- * policy rules, which are evaluated server-side against every new interaction.
- */
-function requireAdminAuth(req: Request, res: Response, next: NextFunction): void {
-  const adminKey = process.env.ADMIN_API_KEY;
-  if (!adminKey) {
-    res.status(503).json({
-      error:
-        "Policy management is not available: ADMIN_API_KEY is not configured on this server.",
-    });
-    return;
-  }
-
-  const auth = req.headers.authorization;
-  const token = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
-
-  if (!token || token !== adminKey) {
-    res.status(401).json({ error: "Unauthorized: a valid admin token is required." });
-    return;
-  }
-
-  next();
-}
 
 router.get("/policies", async (_req, res) => {
   const items = await db.select().from(policiesTable);

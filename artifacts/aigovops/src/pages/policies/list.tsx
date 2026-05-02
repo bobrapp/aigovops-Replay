@@ -4,6 +4,8 @@ import { ShieldAlert, Plus, Trash2, ToggleLeft, ToggleRight } from "lucide-react
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
+import { useAdminAuth } from "@/context/adminAuth";
+import { AdminLoginModal } from "@/components/AdminLoginModal";
 
 function SeverityBadge({ severity }: { severity: "low" | "medium" | "high" | "critical" }) {
   const map = {
@@ -20,23 +22,30 @@ function SeverityBadge({ severity }: { severity: "low" | "medium" | "high" | "cr
 }
 
 export default function PoliciesList() {
+  const { isAuthenticated, isLoading: authLoading, recheckAuth } = useAdminAuth();
   const queryClient = useQueryClient();
   const { data, isLoading } = useListPolicies();
 
   const togglePolicy = useUpdatePolicy({
     mutation: {
       onSuccess: () => queryClient.invalidateQueries({ queryKey: getListPoliciesQueryKey() }),
+      onError: () => void recheckAuth(),
     },
   });
 
   const deletePolicy = useDeletePolicy({
     mutation: {
       onSuccess: () => queryClient.invalidateQueries({ queryKey: getListPoliciesQueryKey() }),
+      onError: () => void recheckAuth(),
     },
   });
 
   return (
     <div className="space-y-6" data-testid="policies-list-page">
+      {!authLoading && isAuthenticated === false && (
+        <AdminLoginModal onSuccess={() => void recheckAuth()} />
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "#1B3B6F" }}>

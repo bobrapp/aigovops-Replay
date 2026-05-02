@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ShieldAlert, ChevronLeft, Loader2 } from "lucide-react";
 import { Link } from "wouter";
+import { useAdminAuth } from "@/context/adminAuth";
+import { AdminLoginModal } from "@/components/AdminLoginModal";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -23,6 +25,7 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>;
 
 export default function CreatePolicy() {
+  const { isAuthenticated, isLoading: authLoading, recheckAuth } = useAdminAuth();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
 
@@ -43,6 +46,7 @@ export default function CreatePolicy() {
         queryClient.invalidateQueries({ queryKey: getListPoliciesQueryKey() });
         setLocation("/policies");
       },
+      onError: () => void recheckAuth(),
     },
   });
 
@@ -52,6 +56,10 @@ export default function CreatePolicy() {
 
   return (
     <div className="max-w-xl mx-auto space-y-6" data-testid="create-policy-page">
+      {!authLoading && isAuthenticated === false && (
+        <AdminLoginModal onSuccess={() => void recheckAuth()} />
+      )}
+
       <div className="flex items-center gap-2 mb-2">
         <Link href="/policies">
           <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground font-medium" data-testid="button-back-policies">
@@ -105,8 +113,18 @@ export default function CreatePolicy() {
               <FormItem>
                 <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Rule Expression</FormLabel>
                 <FormControl>
-                  <Textarea {...field} rows={3} placeholder="e.g. prompt.length < 4096 && !prompt.includes('password')" className="font-mono text-sm resize-none" data-testid="input-policy-rule" />
+                  <Textarea
+                    {...field}
+                    rows={3}
+                    placeholder={`e.g. prompt.length < 4096 && !prompt.includes('password')`}
+                    className="font-mono text-sm resize-none"
+                    data-testid="input-policy-rule"
+                  />
                 </FormControl>
+                <p className="text-xs text-muted-foreground">
+                  Allowed variables: <code className="font-mono">prompt</code>, <code className="font-mono">response</code>, <code className="font-mono">model</code>, <code className="font-mono">userId</code>.
+                  Supports: comparisons, <code className="font-mono">&amp;&amp;</code>, <code className="font-mono">||</code>, <code className="font-mono">!</code>, <code className="font-mono">typeof</code>, and string methods like <code className="font-mono">.includes()</code>, <code className="font-mono">.length</code>.
+                </p>
                 <FormMessage />
               </FormItem>
             )}
