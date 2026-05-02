@@ -1,3 +1,51 @@
+/**
+ * interactions.ts — AI receipt CRUD, chain, verify, replay, and stats routes.
+ *
+ * ─── RESOURCE EXHAUSTION PROTECTIONS (defense-in-depth) ───────────────────────
+ *
+ * 1. BODY SIZE LIMIT (app.ts)
+ *    express.json({ limit: '64kb' }) rejects payloads larger than 64 KiB before
+ *    any route handler runs.  This is the outermost guard.
+ *
+ * 2. RATE LIMITING (app.ts)
+ *    - Global limiter:     300 requests / minute / IP (all routes)
+ *    - Heavy-read limiter:  60 requests / minute / IP on GET /interactions,
+ *                           GET /stats, GET /chain — the expensive DB aggregation
+ *                           endpoints.
+ *
+ * 3. PER-FIELD INPUT CAPS (CreateInteractionBody — OpenAPI → Zod)
+ *    Generated from lib/api-spec/openapi.yaml via Orval:
+ *      prompt   : min 1 char, max 32 768 chars (createInteractionBodyPromptMax)
+ *      response : min 1 char, max 32 768 chars (createInteractionBodyResponseMax)
+ *      model    : min 1 char, max 200 chars    (createInteractionBodyModelMax)
+ *      tags     : max 50 items                 (createInteractionBodyTagsMax)
+ *      tag item : max 100 chars each           (createInteractionBodyTagsItemMax)
+ *    These caps prevent a caller from filling the entire 64 KiB budget with one
+ *    field, providing per-field resource exhaustion protection in addition to the
+ *    global body limit.
+ *
+ * 4. PAGINATION CAPS (ListInteractionsQueryParams — OpenAPI → Zod)
+ *    Generated from lib/api-spec/openapi.yaml via Orval:
+ *      limit  : min 1,   max 200     (listInteractionsQueryLimitMax)
+ *      offset : min 0,   max 100 000 (listInteractionsQueryOffsetMax)
+ *    Callers requesting ?limit=100000000 receive a Zod 400 before any DB call.
+ *    Math.trunc() is additionally applied before passing to Drizzle because
+ *    zod.coerce.number() accepts decimal inputs (e.g. "50.5") that PostgreSQL's
+ *    LIMIT/OFFSET clause would reject with a 500 error.
+ *
+ * 5. AGGREGATION CAPS (GET /stats)
+ *    modelsUsed  : .limit(200) — caps the SELECT DISTINCT model scan to 200 rows.
+ *    recentActivity : .limit(10) — caps the activity log join to 10 rows.
+ *    The count queries use COUNT(*), which PostgreSQL executes as a fast
+ *    sequential aggregate without materializing the full result set.
+ *
+ * 6. USER SCOPING (ALL routes)
+ *    Every DB query is filtered by the authenticated userId (from the verified
+ *    session, never from the request body/query string).  This prevents a
+ *    resource-exhaustion path where a user triggers aggregations over another
+ *    user's (potentially larger) dataset.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 import { Router, type IRouter } from "express";
 import { db, interactionsTable, activityLogTable, policiesTable } from "@workspace/db";
 import { eq, desc, count, and, sql } from "drizzle-orm";
@@ -489,6 +537,29 @@ router.get("/chain", requireAuth, async (req, res) => {
   });
 });
 
+/**
+ * GET /stats
+ *
+ * Resource exhaustion mitigations applied to this aggregation-heavy route:
+ *
+ * Rate limit  : 60 req/min/IP (heavy-read limiter in app.ts) — prevents
+ *               flooding this endpoint to drive expensive DB aggregations.
+ *
+ * User scoping: All five parallel COUNT queries and both sequential queries
+ *               are filtered by userId so that one user cannot trigger
+ *               aggregations over another user's (potentially larger) dataset.
+ *
+ * COUNT(*) safety: COUNT(*) is a streaming aggregate; PostgreSQL does not
+ *               materialise the full result set in memory.  No row limit is
+ *               needed for count-only queries.
+ *
+ * modelsUsed cap: .limit(200) — caps the SELECT DISTINCT model scan to at
+ *               most 200 rows.  Without this cap, a user with many distinct
+ *               models could force the DB to scan a large index range and
+ *               return a large JSON array.
+ *
+ * recentActivity cap: .limit(10) — caps the activity_log JOIN to 10 rows.
+ */
 router.get("/stats", requireAuth, async (req, res) => {
   const uid = userId(req);
 
@@ -500,6 +571,8 @@ router.get("/stats", requireAuth, async (req, res) => {
     userChainIntegrityCheck(uid),
   ]);
 
+  // Resource exhaustion cap: .limit(200) prevents a SELECT DISTINCT from
+  // scanning the entire model column index for users with many distinct models.
   const modelsResult = await db
     .selectDistinct({ model: interactionsTable.model })
     .from(interactionsTable)
@@ -508,6 +581,7 @@ router.get("/stats", requireAuth, async (req, res) => {
 
   // Filter recent activity to the caller's own receipts by joining through the interactions table.
   // activity_log has no owner column; ownership is inferred from the linked interaction's userId.
+  // Resource exhaustion cap: .limit(10) — only the 10 most recent entries are returned.
   const recentActivity = await db
     .select({
       id: activityLogTable.id,
