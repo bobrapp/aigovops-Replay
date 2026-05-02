@@ -4,6 +4,23 @@
 
 pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
 
+## Project: AIGovOps REPLAY
+
+A cryptographically signed receipt system for every AI interaction. Every prompt/response pair gets a SHA-256 hash-chained receipt that can be verified, replayed, and checked against policy-as-code rules.
+
+### Features
+- **Mint Receipts**: Submit AI interactions to create cryptographically signed, hash-chained receipts
+- **Hash Chain**: Each receipt links to the previous via chain hash (tamper-evident append-only log)
+- **Verify**: Cryptographic verification of prompt/response/chain hashes
+- **Replay**: One-click replay of any interaction with output diff comparison
+- **Policies**: Policy-as-code rules (JS expressions) evaluated on every new receipt
+- **Dashboard**: Live stats, chain health, recent activity
+
+### Crypto
+- `promptHash = sha256("prompt:" + prompt)`
+- `responseHash = sha256("response:" + response)`
+- `chainHash = sha256("chain:" + promptHash + ":" + responseHash + ":" + prevHash|GENESIS)`
+
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces
@@ -12,6 +29,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **TypeScript version**: 5.9
 - **API framework**: Express 5
 - **Database**: PostgreSQL + Drizzle ORM
+- **Frontend**: React + Vite + Tailwind CSS + shadcn/ui
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
@@ -23,5 +41,10 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
+
+## DB Tables
+- `interactions` — AI interaction receipts with crypto hashes
+- `policies` — Policy-as-code rules (JS expressions)
+- `activity_log` — Audit trail of all events
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
