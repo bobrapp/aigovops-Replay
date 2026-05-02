@@ -167,12 +167,17 @@ paths:
           in: query
           schema:
             type: integer
+            format: int32
             default: 50
+            minimum: 1
+            maximum: 200
         - name: offset
           in: query
           schema:
             type: integer
+            format: int32
             default: 0
+            minimum: 0
         - name: model
           in: query
           schema:
@@ -720,6 +725,7 @@ components:
           type: integer
         modelsUsed:
           type: array
+          maxItems: 200
           items:
             type: string
         recentActivity:

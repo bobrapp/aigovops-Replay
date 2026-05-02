@@ -457,7 +457,8 @@ router.get("/stats", requireAuth, async (_req, res) => {
 
   const modelsResult = await db
     .selectDistinct({ model: interactionsTable.model })
-    .from(interactionsTable);
+    .from(interactionsTable)
+    .limit(200);
 
   const recentActivity = await db
     .select()
