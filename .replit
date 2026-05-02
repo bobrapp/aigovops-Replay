@@ -38,4 +38,3 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-ADMIN_API_KEY = "852876d2ba47d06611bd741e8b0efd5885c4c7a5cfd817082f53593ae90ba205"
