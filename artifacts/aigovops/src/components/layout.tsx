@@ -1,9 +1,10 @@
 import { Link, useLocation } from "wouter";
-import { Shield, FileText, Link2, ShieldAlert, CheckCircle, Database, Search, Menu, X, BookOpen } from "lucide-react";
+import { Shield, FileText, Link2, ShieldAlert, CheckCircle, Database, Search, Menu, X, BookOpen, Zap } from "lucide-react";
 import { ReactNode, useState } from "react";
 
 const nav = [
   { label: "Dashboard", href: "/", icon: Database },
+  { label: "Live Demo", href: "/demo", icon: Zap },
   { label: "Receipts", href: "/receipts", icon: FileText },
   { label: "Mint Receipt", href: "/receipts/new", icon: CheckCircle },
   { label: "Verify", href: "/verify", icon: Search },

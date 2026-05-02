@@ -15,6 +15,8 @@ import ChainView from "./pages/chain";
 import PoliciesList from "./pages/policies/list";
 import CreatePolicy from "./pages/policies/new";
 import VerifyReceipt from "./pages/verify";
+import DemoPage from "./pages/demo";
+import SpecPage from "./pages/spec";
 
 const queryClient = new QueryClient();
 
@@ -23,6 +25,7 @@ function Router() {
     <Layout>
       <Switch>
         <Route path="/" component={Dashboard} />
+        <Route path="/demo" component={DemoPage} />
         <Route path="/receipts" component={ReceiptsList} />
         <Route path="/receipts/new" component={SubmitReceipt} />
         <Route path="/receipts/:id" component={ReceiptDetail} />
@@ -30,6 +33,7 @@ function Router() {
         <Route path="/policies" component={PoliciesList} />
         <Route path="/policies/new" component={CreatePolicy} />
         <Route path="/verify" component={VerifyReceipt} />
+        <Route path="/spec" component={SpecPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

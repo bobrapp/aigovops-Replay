@@ -1,5 +1,5 @@
 import { useGetStats, useGetChain, useListInteractions } from "@workspace/api-client-react";
-import { Shield, CheckCircle, XCircle, RefreshCw, Link2, Activity, Clock } from "lucide-react";
+import { Shield, CheckCircle, XCircle, RefreshCw, Link2, Activity, Clock, Zap, ArrowRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -75,6 +75,19 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      <Link href="/demo">
+        <div className="flex items-center justify-between bg-yellow-400/5 border border-yellow-400/20 rounded-md px-4 py-3 cursor-pointer hover:bg-yellow-400/10 hover:border-yellow-400/40 transition-colors group">
+          <div className="flex items-center gap-3">
+            <Zap className="w-4 h-4 text-yellow-400" />
+            <div>
+              <div className="text-sm font-bold font-mono text-yellow-400">LIVE DEMO — 4-step judge walkthrough</div>
+              <div className="text-xs text-muted-foreground font-mono">Run a prompt → see a receipt → verify the hash → replay it</div>
+            </div>
+          </div>
+          <ArrowRight className="w-4 h-4 text-yellow-400 group-hover:translate-x-1 transition-transform" />
+        </div>
+      </Link>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
         <StatCard label="Total Receipts" value={statsLoading ? undefined : stats?.totalInteractions} icon={Activity} />
