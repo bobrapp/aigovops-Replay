@@ -27,38 +27,53 @@ const router: IRouter = Router();
 const CHAIN_WRITE_LOCK_KEY = 0x52455041; // "REPA" in hex — unique to this app
 
 /**
- * Full-chain integrity: returns broken link count, non-null fork count,
- * and genesis fork count (more than one receipt with NULL prevHash).
- * All three must be zero for the chain to be intact.
+ * Per-user chain integrity check.
+ *
+ * All three queries are scoped to the calling user's receipts so that
+ * integrity metadata for other users is never included in the result.
+ *
+ * Returns:
+ *  brokenLinks — receipts whose prevHash doesn't match any chainHash the
+ *                user owns (orphaned within their sub-chain)
+ *  forks       — prevHash values claimed by more than one of the user's receipts
+ *  genesisCount — count of the user's receipts with NULL prevHash (should be ≤ 1)
+ *  intact      — true only when all three anomaly counts are zero/normal
  */
-async function fullChainIntegrityCheck(): Promise<{
+async function userChainIntegrityCheck(uid: string): Promise<{
   brokenLinks: number;
   forks: number;
   genesisCount: number;
   intact: boolean;
 }> {
   const [brokenLinksResult, forksResult, genesisResult] = await Promise.all([
-    // Broken link: receipt whose prevHash doesn't match any existing chainHash
+    // Broken link: user's receipt whose prevHash doesn't match any chainHash they own
     db.execute<{ broken: string }>(sql`
       SELECT COUNT(*) AS broken
       FROM interactions
-      WHERE prev_hash IS NOT NULL
-        AND prev_hash NOT IN (SELECT chain_hash FROM interactions)
+      WHERE user_id = ${uid}
+        AND prev_hash IS NOT NULL
+        AND prev_hash NOT IN (
+          SELECT chain_hash FROM interactions WHERE user_id = ${uid}
+        )
     `),
-    // Fork: more than one receipt sharing the same non-null prevHash
+    // Fork: more than one of the user's receipts sharing the same non-null prevHash
     db.execute<{ forks: string }>(sql`
       SELECT COUNT(*) AS forks
       FROM (
         SELECT prev_hash
         FROM interactions
-        WHERE prev_hash IS NOT NULL
+        WHERE user_id = ${uid}
+          AND prev_hash IS NOT NULL
         GROUP BY prev_hash
         HAVING COUNT(*) > 1
       ) dup
     `),
-    // Genesis count: exactly one receipt should have NULL prevHash when chain is non-empty
+    // Genesis count: exactly one of the user's receipts should have NULL prevHash
     db.execute<{ genesis_count: string }>(sql`
-      SELECT COUNT(*) AS genesis_count FROM interactions WHERE prev_hash IS NULL
+      SELECT COUNT(*) AS genesis_count
+      FROM interactions
+      WHERE user_id = ${uid}
+        AND prev_hash IS NULL
     `),
   ]);
 
@@ -66,8 +81,6 @@ async function fullChainIntegrityCheck(): Promise<{
   const forks = Number((forksResult.rows[0] as { forks: string } | undefined)?.forks ?? 0);
   const genesisCount = Number((genesisResult.rows[0] as { genesis_count: string } | undefined)?.genesis_count ?? 0);
 
-  // A valid non-empty chain has exactly one genesis entry
-  // genesisCount > 1 means competing genesis nodes (also a fork)
   const intact = brokenLinks === 0 && forks === 0 && genesisCount <= 1;
 
   return { brokenLinks, forks, genesisCount, intact };
@@ -411,7 +424,7 @@ router.get("/chain", requireAuth, async (req, res) => {
 
   const [totalCountResult, chainStatus] = await Promise.all([
     db.select({ cnt: count() }).from(interactionsTable).where(eq(interactionsTable.userId, uid)),
-    fullChainIntegrityCheck(),
+    userChainIntegrityCheck(uid),
   ]);
 
   const totalCount = Number(totalCountResult[0]?.cnt ?? 0);
@@ -457,7 +470,7 @@ router.get("/stats", requireAuth, async (req, res) => {
     db.select({ count: count() }).from(interactionsTable).where(and(eq(interactionsTable.userId, uid), eq(interactionsTable.policyStatus, "pass"))),
     db.select({ count: count() }).from(interactionsTable).where(and(eq(interactionsTable.userId, uid), eq(interactionsTable.policyStatus, "fail"))),
     db.select({ count: sql<number>`sum(${interactionsTable.replayCount})` }).from(interactionsTable).where(eq(interactionsTable.userId, uid)),
-    fullChainIntegrityCheck(),
+    userChainIntegrityCheck(uid),
   ]);
 
   const modelsResult = await db
