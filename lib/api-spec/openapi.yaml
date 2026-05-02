@@ -178,6 +178,7 @@ paths:
             format: int32
             default: 0
             minimum: 0
+            maximum: 100000
         - name: model
           in: query
           schema:

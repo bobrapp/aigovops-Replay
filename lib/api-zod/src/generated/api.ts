@@ -107,7 +107,7 @@ export const listInteractionsQueryOffsetDefault = 0;
 
 export const ListInteractionsQueryParams = zod.object({
   limit: zod.coerce.number().int().min(1).max(200).default(listInteractionsQueryLimitDefault),
-  offset: zod.coerce.number().int().min(0).default(listInteractionsQueryOffsetDefault),
+  offset: zod.coerce.number().int().min(0).max(100000).default(listInteractionsQueryOffsetDefault),
   model: zod.coerce.string().optional(),
   policyStatus: zod.enum(["pass", "fail", "pending"]).optional(),
 });
