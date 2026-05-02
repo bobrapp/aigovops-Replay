@@ -6,6 +6,7 @@ import NotFound from "@/pages/not-found";
 import { ThemeProvider } from "./components/theme-provider";
 import { Layout } from "./components/layout";
 import { ModeProvider, useMode } from "./context/mode";
+import { AdminAuthProvider } from "./context/adminAuth";
 import { useAuth } from "@workspace/replit-auth-web";
 
 // Expert pages
@@ -91,11 +92,13 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <ModeProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <AuthGate>
-                <Router />
-              </AuthGate>
-            </WouterRouter>
+            <AdminAuthProvider>
+              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                <AuthGate>
+                  <Router />
+                </AuthGate>
+              </WouterRouter>
+            </AdminAuthProvider>
           </ModeProvider>
           <Toaster />
         </TooltipProvider>
