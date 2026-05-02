@@ -61,12 +61,12 @@ export default function DemoPage() {
     try {
       const res = await fetch("/api/interactions", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: demo.prompt,
           response: demo.response,
           model: demo.model,
-          userId: "demo-judge",
           tags: demo.tags,
         }),
       });
@@ -84,7 +84,9 @@ export default function DemoPage() {
     if (!receipt) return;
     setStep("verifying");
     try {
-      const res = await fetch(`/api/interactions/${receipt.id}/verify`);
+      const res = await fetch(`/api/interactions/${receipt.id}/verify`, {
+        credentials: "include",
+      });
       const data = await res.json();
       setVerifyOk(data.valid);
       setStep("verified");
@@ -98,7 +100,10 @@ export default function DemoPage() {
     if (!receipt) return;
     setStep("replaying");
     try {
-      const res = await fetch(`/api/interactions/${receipt.id}/replay`, { method: "POST" });
+      const res = await fetch(`/api/interactions/${receipt.id}/replay`, {
+        method: "POST",
+        credentials: "include",
+      });
       const data = await res.json();
       setReplayResponse(data.replayedResponse ?? data.response ?? receipt.response);
       setStep("replayed");
@@ -159,178 +164,198 @@ export default function DemoPage() {
         ))}
       </div>
 
+      {/* Error */}
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3 text-xs font-mono text-red-400">{error}</div>
+        <div className="bg-red-500/10 border border-red-500/30 rounded p-3 text-xs font-mono text-red-400" data-testid="demo-error">
+          {error}
+        </div>
       )}
 
-      {/* Step 1: Choose prompt */}
-      {step === "choose" && (
+      {/* Step: Choose */}
+      {(step === "choose" || step === "submitting") && (
         <div className="space-y-4">
-          <div className="text-xs text-muted-foreground uppercase tracking-widest font-mono">CHOOSE A SCENARIO</div>
-          <div className="space-y-2">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono">SELECT SCENARIO</div>
+          <div className="grid gap-2">
             {DEMO_PROMPTS.map((p, i) => (
               <div
                 key={i}
                 onClick={() => setSelected(i)}
-                className={`border rounded-md p-4 cursor-pointer transition-all ${selected === i ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/40"}`}
+                className={`border rounded p-3 cursor-pointer transition-all font-mono text-xs ${selected === i ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/40"}`}
+                data-testid={`demo-scenario-${i}`}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold font-mono text-foreground">{p.label}</span>
-                  <div className="flex gap-1">
-                    {p.tags.map(t => <Badge key={t} variant="outline" className="font-mono text-[10px] text-muted-foreground">{t}</Badge>)}
-                  </div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-foreground">{p.label}</span>
+                  {selected === i && <span className="text-primary text-[10px]">SELECTED</span>}
                 </div>
-                <div className="text-xs font-mono text-muted-foreground truncate">{p.prompt}</div>
+                <div className="text-muted-foreground truncate">{p.prompt.slice(0, 80)}…</div>
+                <div className="flex gap-1 mt-1.5">
+                  {p.tags.map((t) => (
+                    <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">{t}</span>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
           <button
             onClick={mintReceipt}
-            className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-mono font-bold text-sm py-3 rounded-md hover:bg-primary/90 transition-colors"
+            disabled={step === "submitting"}
+            className="w-full bg-primary text-primary-foreground rounded px-4 py-2.5 text-xs font-mono font-bold flex items-center justify-center gap-2 hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            data-testid="demo-button-mint"
           >
-            <Shield className="w-4 h-4" />
-            MINT RECEIPT
-            <ArrowRight className="w-4 h-4" />
+            {step === "submitting" ? (
+              <><RefreshCw className="w-3 h-3 animate-spin" />MINTING RECEIPT…</>
+            ) : (
+              <><Shield className="w-3 h-3" />MINT RECEIPT<ArrowRight className="w-3 h-3" /></>
+            )}
           </button>
         </div>
       )}
 
-      {/* Submitting */}
-      {step === "submitting" && (
-        <Card className="border-primary/20">
-          <CardContent className="p-6 flex flex-col items-center gap-3">
-            <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            <div className="text-sm font-mono text-muted-foreground">Computing hashes + sealing chain…</div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Step 2: Receipt */}
-      {(step === "receipt" || step === "verifying") && receipt && (
+      {/* Step: Receipt */}
+      {step === "receipt" && receipt && (
         <div className="space-y-4">
-          <div className="text-xs text-muted-foreground uppercase tracking-widest font-mono flex items-center gap-2">
-            <CheckCircle className="w-3 h-3 text-emerald-400" /> RECEIPT MINTED
-          </div>
-          <Card className="border-emerald-500/20 bg-card">
-            <CardContent className="p-4 space-y-3 text-xs font-mono">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">RECEIPT ID</span>
-                <span className="text-foreground">{receipt.id.slice(0, 20)}…</span>
+          <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono">RECEIPT MINTED</div>
+          <Card className="border-emerald-500/30 bg-emerald-500/5">
+            <CardContent className="p-4 space-y-3 font-mono text-xs">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-emerald-400" />
+                <span className="text-emerald-400 font-bold">CRYPTOGRAPHIC RECEIPT SEALED</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground flex items-center gap-1"><User className="w-3 h-3" /> USER</span>
-                <span className="text-foreground">demo-judge</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground flex items-center gap-1"><Hash className="w-3 h-3" /> MODEL</span>
-                <span className="text-primary">{receipt.model}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" /> TIME</span>
-                <span className="text-foreground">{new Date(receipt.createdAt).toLocaleTimeString()}</span>
-              </div>
-              <div className="border-t border-border pt-3 space-y-2">
-                <div className="flex items-start justify-between gap-4">
-                  <span className="text-muted-foreground flex-shrink-0">PROMPT HASH</span>
-                  <span className="text-cyan-400 truncate text-right">{receipt.promptHash.slice(0, 24)}…</span>
-                </div>
-                <div className="flex items-start justify-between gap-4">
-                  <span className="text-muted-foreground flex-shrink-0">RESPONSE HASH</span>
-                  <span className="text-cyan-400 truncate text-right">{receipt.responseHash.slice(0, 24)}…</span>
-                </div>
-                <div className="flex items-start justify-between gap-4">
-                  <span className="text-muted-foreground flex-shrink-0">CHAIN HASH</span>
-                  <span className="text-yellow-400 truncate text-right">{receipt.chainHash.slice(0, 24)}…</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">PREV HASH</span>
-                  <span className="text-muted-foreground">{receipt.prevHash ? receipt.prevHash.slice(0, 16) + "…" : "GENESIS"}</span>
+              <div className="space-y-1.5">
+                <div className="flex gap-2"><span className="text-muted-foreground w-28">RECEIPT ID</span><span className="text-foreground truncate" data-testid="demo-receipt-id">{receipt.id}</span></div>
+                <div className="flex gap-2"><span className="text-muted-foreground w-28">MODEL</span><span className="text-foreground">{receipt.model}</span></div>
+                <div className="flex gap-2"><span className="text-muted-foreground w-28">POLICY</span>
+                  <span className={receipt.policyStatus === "pass" ? "text-emerald-400" : receipt.policyStatus === "fail" ? "text-red-400" : "text-yellow-400"} data-testid="demo-policy-status">
+                    {receipt.policyStatus.toUpperCase()}
+                  </span>
                 </div>
               </div>
-              <div className="border-t border-border pt-3 flex items-center justify-between">
-                <span className="text-muted-foreground">POLICY</span>
-                <span className={`font-bold uppercase px-2 py-0.5 rounded border text-[10px] ${receipt.policyStatus === "pass" ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10" : "text-red-400 border-red-500/30 bg-red-500/10"}`}>
-                  {receipt.policyStatus}
-                  {receipt.policyViolations?.length > 0 && ` (${receipt.policyViolations.length} violation${receipt.policyViolations.length > 1 ? "s" : ""})`}
-                </span>
+              <div className="border-t border-emerald-500/20 pt-2 space-y-1">
+                <div className="flex items-start gap-2">
+                  <Hash className="w-3 h-3 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div>
+                    <div className="text-muted-foreground text-[10px]">PROMPT HASH</div>
+                    <div className="text-foreground text-[10px] break-all" data-testid="demo-prompt-hash">{receipt.promptHash}</div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Hash className="w-3 h-3 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div>
+                    <div className="text-muted-foreground text-[10px]">CHAIN HASH</div>
+                    <div className="text-foreground text-[10px] break-all" data-testid="demo-chain-hash">{receipt.chainHash}</div>
+                  </div>
+                </div>
               </div>
+              {receipt.policyViolations.length > 0 && (
+                <div className="border-t border-red-500/20 pt-2">
+                  <div className="text-red-400 text-[10px] mb-1">POLICY VIOLATIONS</div>
+                  {receipt.policyViolations.map((v, i) => (
+                    <div key={i} className="text-red-300 text-[10px]">{v}</div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
           <button
             onClick={verifyReceipt}
-            disabled={step === "verifying"}
-            className="w-full flex items-center justify-center gap-2 bg-card border border-primary text-primary font-mono font-bold text-sm py-3 rounded-md hover:bg-primary/10 transition-colors disabled:opacity-60"
+            className="w-full bg-primary text-primary-foreground rounded px-4 py-2.5 text-xs font-mono font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors"
+            data-testid="demo-button-verify"
           >
-            {step === "verifying" ? <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" /> : <Shield className="w-4 h-4" />}
-            VERIFY HASH CHAIN
-            <ArrowRight className="w-4 h-4" />
+            <CheckCircle className="w-3 h-3" />VERIFY CRYPTOGRAPHIC CHAIN<ArrowRight className="w-3 h-3" />
           </button>
         </div>
       )}
 
-      {/* Step 3: Verified */}
-      {(step === "verified" || step === "replaying") && receipt && (
+      {/* Step: Verifying */}
+      {step === "verifying" && (
+        <div className="text-center py-8 font-mono text-sm text-muted-foreground">
+          <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-primary" />
+          VERIFYING HASH CHAIN…
+        </div>
+      )}
+
+      {/* Step: Verified */}
+      {step === "verified" && (
         <div className="space-y-4">
-          <div className={`flex items-center gap-2 text-sm font-mono font-bold ${verifyOk ? "text-emerald-400" : "text-red-400"}`}>
-            {verifyOk ? <CheckCircle className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
-            {verifyOk ? "CRYPTOGRAPHIC VERIFICATION PASSED" : "VERIFICATION FAILED"}
-          </div>
-          {verifyOk && (
-            <Card className="border-emerald-500/20 bg-emerald-500/5">
-              <CardContent className="p-4 text-xs font-mono space-y-1.5 text-muted-foreground">
-                <div className="flex items-center gap-2 text-emerald-400"><CheckCircle className="w-3 h-3" /> Prompt hash verified</div>
-                <div className="flex items-center gap-2 text-emerald-400"><CheckCircle className="w-3 h-3" /> Response hash verified</div>
-                <div className="flex items-center gap-2 text-emerald-400"><CheckCircle className="w-3 h-3" /> Chain linkage verified</div>
-                <div className="flex items-center gap-2 text-emerald-400"><CheckCircle className="w-3 h-3" /> Receipt unmodified since minting</div>
-              </CardContent>
-            </Card>
-          )}
+          <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono">VERIFICATION RESULT</div>
+          <Card className={verifyOk ? "border-emerald-500/30 bg-emerald-500/5" : "border-red-500/30 bg-red-500/5"}>
+            <CardContent className="p-4 font-mono text-xs">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle className={`w-4 h-4 ${verifyOk ? "text-emerald-400" : "text-red-400"}`} />
+                <span className={`font-bold ${verifyOk ? "text-emerald-400" : "text-red-400"}`} data-testid="demo-verify-result">
+                  {verifyOk ? "CHAIN VERIFIED — RECEIPT AUTHENTIC" : "VERIFICATION FAILED"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground text-[10px]">
+                <User className="w-3 h-3" />
+                <span>Checked by authenticated user</span>
+                <Clock className="w-3 h-3 ml-2" />
+                <span>{new Date().toLocaleTimeString()}</span>
+              </div>
+            </CardContent>
+          </Card>
           <button
             onClick={replayReceipt}
-            disabled={step === "replaying"}
-            className="w-full flex items-center justify-center gap-2 bg-cyan-500/10 border border-cyan-500/40 text-cyan-400 font-mono font-bold text-sm py-3 rounded-md hover:bg-cyan-500/20 transition-colors disabled:opacity-60"
+            className="w-full bg-primary text-primary-foreground rounded px-4 py-2.5 text-xs font-mono font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors"
+            data-testid="demo-button-replay"
           >
-            {step === "replaying" ? <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            REPLAY INTERACTION
-            <ArrowRight className="w-4 h-4" />
+            <RefreshCw className="w-3 h-3" />REPLAY INTERACTION<ArrowRight className="w-3 h-3" />
           </button>
         </div>
       )}
 
-      {/* Step 4: Replayed */}
+      {/* Step: Replaying */}
+      {step === "replaying" && (
+        <div className="text-center py-8 font-mono text-sm text-muted-foreground">
+          <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-cyan-400" />
+          REPLAYING INTERACTION…
+        </div>
+      )}
+
+      {/* Step: Replayed */}
       {step === "replayed" && receipt && (
         <div className="space-y-4">
-          <div className="flex items-center gap-2 text-sm font-mono font-bold text-cyan-400">
-            <RefreshCw className="w-4 h-4" /> REPLAY COMPLETE
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <div className="text-xs text-muted-foreground font-mono uppercase tracking-widest mb-2">ORIGINAL</div>
-              <div className="bg-card border border-border rounded-md p-3 text-xs font-mono text-foreground min-h-20 leading-relaxed">{receipt.response}</div>
-            </div>
-            <div>
-              <div className="text-xs text-muted-foreground font-mono uppercase tracking-widest mb-2">REPLAYED</div>
-              <div className="bg-card border border-cyan-500/30 rounded-md p-3 text-xs font-mono text-foreground min-h-20 leading-relaxed">{replayResponse}</div>
-            </div>
-          </div>
-          {receipt.response === replayResponse && (
-            <div className="flex items-center gap-2 text-xs font-mono text-emerald-400">
-              <CheckCircle className="w-3 h-3" /> Outputs match — reproducible
-            </div>
-          )}
-          <div className="flex gap-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono">REPLAY COMPLETE</div>
+          <Card className="border-cyan-500/30 bg-cyan-500/5">
+            <CardContent className="p-4 font-mono text-xs space-y-3">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 text-cyan-400" />
+                <span className="text-cyan-400 font-bold">REPLAY RECEIPT MINTED</span>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-[10px] mb-1">ORIGINAL RESPONSE</div>
+                <div className="bg-background border border-border rounded p-2 text-foreground text-[10px] leading-relaxed max-h-24 overflow-auto">{receipt.response}</div>
+              </div>
+              {replayResponse && replayResponse !== receipt.response && (
+                <div>
+                  <div className="text-muted-foreground text-[10px] mb-1">REPLAYED RESPONSE</div>
+                  <div className="bg-background border border-cyan-500/20 rounded p-2 text-cyan-300 text-[10px] leading-relaxed max-h-24 overflow-auto" data-testid="demo-replay-response">{replayResponse}</div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          <div className="grid grid-cols-2 gap-2">
             <button
               onClick={reset}
-              className="flex-1 py-2.5 border border-border rounded-md text-sm font-mono text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+              className="bg-card border border-border text-foreground rounded px-4 py-2.5 text-xs font-mono font-bold hover:border-primary/40 transition-colors"
+              data-testid="demo-button-reset"
             >
               RUN ANOTHER
             </button>
             <button
               onClick={() => navigate(`/receipts/${receipt.id}`)}
-              className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-md text-sm font-mono font-bold hover:bg-primary/90 transition-colors"
+              className="bg-primary text-primary-foreground rounded px-4 py-2.5 text-xs font-mono font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors"
+              data-testid="demo-button-view-receipt"
             >
-              VIEW FULL RECEIPT
+              VIEW RECEIPT<ArrowRight className="w-3 h-3" />
             </button>
+          </div>
+
+          {/* Summary badges */}
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
+            <Badge variant="outline" className="font-mono text-[10px] text-emerald-400 border-emerald-500/30">RECEIPT MINTED ✓</Badge>
+            <Badge variant="outline" className="font-mono text-[10px] text-emerald-400 border-emerald-500/30">CHAIN VERIFIED ✓</Badge>
+            <Badge variant="outline" className="font-mono text-[10px] text-cyan-400 border-cyan-500/30">REPLAYED ✓</Badge>
           </div>
         </div>
       )}

@@ -11,6 +11,12 @@ import {
 import { hashPrompt, hashResponse, buildChainHash } from "../lib/crypto";
 import { generateId } from "../lib/id";
 import { evalPolicyRule } from "../lib/policy-eval";
+import { requireAuth } from "../middlewares/requireAuth";
+
+/** requireAuth guarantees req.user is set; this helper narrows the type. */
+function userId(req: Express.Request): string {
+  return (req as Express.Request & { user: NonNullable<Express.Request["user"]> }).user.id;
+}
 
 const router: IRouter = Router();
 
@@ -67,14 +73,17 @@ async function fullChainIntegrityCheck(): Promise<{
   return { brokenLinks, forks, genesisCount, intact };
 }
 
-router.get("/interactions", async (req, res) => {
+router.get("/interactions", requireAuth, async (req, res) => {
   const query = ListInteractionsQueryParams.parse(req.query);
   const conditions: ReturnType<typeof eq>[] = [];
+
+  // Scope reads to the authenticated user's own receipts
+  conditions.push(eq(interactionsTable.userId, userId(req)));
 
   if (query.model) conditions.push(eq(interactionsTable.model, query.model));
   if (query.policyStatus) conditions.push(eq(interactionsTable.policyStatus, query.policyStatus));
 
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const where = and(...conditions);
 
   const [items, totalResult] = await Promise.all([
     db
@@ -95,8 +104,12 @@ router.get("/interactions", async (req, res) => {
   });
 });
 
-router.post("/interactions", async (req, res) => {
+router.post("/interactions", requireAuth, async (req, res) => {
   const body = CreateInteractionBody.parse(req.body);
+
+  // userId always comes from the authenticated session, never from the request body.
+  // requireAuth guarantees req.user is set before this handler is reached.
+  const uid = userId(req);
 
   // Evaluate policies before the locked transaction (read-only, no chain state needed)
   const policies = await db
@@ -110,7 +123,7 @@ router.post("/interactions", async (req, res) => {
       prompt: body.prompt,
       response: body.response,
       model: body.model,
-      userId: body.userId,
+      userId: uid,
     });
     if (!passed) {
       violations.push(`[${policy.severity.toUpperCase()}] ${policy.name}: ${policy.rule}`);
@@ -143,7 +156,7 @@ router.post("/interactions", async (req, res) => {
         prompt: body.prompt,
         response: body.response,
         model: body.model,
-        userId: body.userId,
+        userId: uid,
         tags: body.tags ?? [],
         promptHash: pHash,
         responseHash: rHash,
@@ -164,7 +177,7 @@ router.post("/interactions", async (req, res) => {
       prompt: body.prompt,
       response: body.response,
       model: body.model,
-      userId: body.userId,
+      userId: uid,
     });
     if (!passed) {
       await db
@@ -184,7 +197,7 @@ router.post("/interactions", async (req, res) => {
   res.status(201).json(toInteractionDto(interaction));
 });
 
-router.get("/interactions/:id", async (req, res) => {
+router.get("/interactions/:id", requireAuth, async (req, res) => {
   const { id } = GetInteractionParams.parse(req.params);
   const [interaction] = await db
     .select()
@@ -196,10 +209,16 @@ router.get("/interactions/:id", async (req, res) => {
     return;
   }
 
+  // Access control: users can only access their own receipts
+  if (interaction.userId !== userId(req)) {
+    res.status(403).json({ error: "Forbidden: this receipt belongs to another user" });
+    return;
+  }
+
   res.json(toInteractionDto(interaction));
 });
 
-router.get("/interactions/:id/verify", async (req, res) => {
+router.get("/interactions/:id/verify", requireAuth, async (req, res) => {
   const { id } = VerifyInteractionParams.parse(req.params);
   const [interaction] = await db
     .select()
@@ -208,6 +227,12 @@ router.get("/interactions/:id/verify", async (req, res) => {
 
   if (!interaction) {
     res.status(404).json({ error: "Not found" });
+    return;
+  }
+
+  // Access control: users can only access their own receipts
+  if (interaction.userId !== userId(req)) {
+    res.status(403).json({ error: "Forbidden: this receipt belongs to another user" });
     return;
   }
 
@@ -291,7 +316,7 @@ router.get("/interactions/:id/verify", async (req, res) => {
   });
 });
 
-router.post("/interactions/:id/replay", async (req, res) => {
+router.post("/interactions/:id/replay", requireAuth, async (req, res) => {
   const { id } = ReplayInteractionParams.parse(req.params);
   const [interaction] = await db
     .select()
@@ -300,6 +325,12 @@ router.post("/interactions/:id/replay", async (req, res) => {
 
   if (!interaction) {
     res.status(404).json({ error: "Not found" });
+    return;
+  }
+
+  // Access control: users can only access their own receipts
+  if (interaction.userId !== userId(req)) {
+    res.status(403).json({ error: "Forbidden: this receipt belongs to another user" });
     return;
   }
 
@@ -375,7 +406,7 @@ router.post("/interactions/:id/replay", async (req, res) => {
   });
 });
 
-router.get("/chain", async (_req, res) => {
+router.get("/chain", requireAuth, async (_req, res) => {
   const [totalCountResult, chainStatus] = await Promise.all([
     db.select({ cnt: count() }).from(interactionsTable),
     fullChainIntegrityCheck(),
@@ -415,7 +446,7 @@ router.get("/chain", async (_req, res) => {
   });
 });
 
-router.get("/stats", async (_req, res) => {
+router.get("/stats", requireAuth, async (_req, res) => {
   const [totalResult, policyPassResult, policyFailResult, replayResult, chainStatus] = await Promise.all([
     db.select({ count: count() }).from(interactionsTable),
     db.select({ count: count() }).from(interactionsTable).where(eq(interactionsTable.policyStatus, "pass")),

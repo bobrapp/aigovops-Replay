@@ -15,7 +15,6 @@ const formSchema = z.object({
   prompt: z.string().min(1, "Prompt is required"),
   response: z.string().min(1, "Response is required"),
   model: z.string().min(1, "Model name is required"),
-  userId: z.string().min(1, "User ID is required"),
   tags: z.string(),
 });
 
@@ -33,7 +32,6 @@ export default function SubmitReceipt() {
       prompt: "",
       response: "",
       model: "gpt-4o",
-      userId: "user-001",
       tags: "",
     },
   });
@@ -58,7 +56,6 @@ export default function SubmitReceipt() {
         prompt: values.prompt,
         response: values.response,
         model: values.model,
-        userId: values.userId,
         tags: values.tags ? values.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
       },
     });
@@ -136,34 +133,19 @@ export default function SubmitReceipt() {
               </FormItem>
             )}
           />
-          <div className="grid grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="model"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Model</FormLabel>
-                  <FormControl>
-                    <Input {...field} placeholder="gpt-4o, claude-3-5..." className="text-sm" data-testid="input-model" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="userId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">User ID</FormLabel>
-                  <FormControl>
-                    <Input {...field} placeholder="user-001" className="text-sm" data-testid="input-user-id" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
+          <FormField
+            control={form.control}
+            name="model"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Model</FormLabel>
+                <FormControl>
+                  <Input {...field} placeholder="gpt-4o, claude-3-5..." className="text-sm" data-testid="input-model" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <FormField
             control={form.control}
             name="tags"

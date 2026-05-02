@@ -20,7 +20,6 @@ const formSchema = z.object({
   prompt: z.string().min(1, "Please enter what you asked the AI"),
   response: z.string().min(1, "Please paste what the AI said back"),
   model: z.string().min(1, "Please enter the AI tool name"),
-  userId: z.string().min(1, "Please enter your name or ID"),
   tags: z.string(),
 });
 
@@ -29,7 +28,7 @@ type FormValues = z.infer<typeof formSchema>;
 const STEPS = [
   { id: "prompt", title: "What did you ask?", subtitle: "Paste or type what you sent to the AI" },
   { id: "response", title: "What did it say?", subtitle: "Paste the AI's reply here" },
-  { id: "details", title: "A little more info", subtitle: "Just two quick details to finish up" },
+  { id: "details", title: "A little more info", subtitle: "Just a quick detail to finish up" },
 ];
 
 const AI_TOOLS = ["ChatGPT", "Claude", "Gemini", "Copilot", "Other"];
@@ -43,7 +42,7 @@ export default function SimpleRecord() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { prompt: "", response: "", model: "ChatGPT", userId: "", tags: "" },
+    defaultValues: { prompt: "", response: "", model: "ChatGPT", tags: "" },
   });
 
   const createInteraction = useCreateInteraction({
@@ -60,7 +59,7 @@ export default function SimpleRecord() {
   });
 
   async function goNext() {
-    const stepFields: (keyof FormValues)[][] = [["prompt"], ["response"], ["model", "userId"]];
+    const stepFields: (keyof FormValues)[][] = [["prompt"], ["response"], ["model"]];
     const fields = stepFields[step];
     const ok = await form.trigger(fields);
     if (ok) setStep((s) => Math.min(s + 1, STEPS.length - 1));
@@ -73,7 +72,6 @@ export default function SimpleRecord() {
         prompt: values.prompt,
         response: values.response,
         model: values.model,
-        userId: values.userId,
         tags: values.tags ? values.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
       },
     });
@@ -233,24 +231,6 @@ export default function SimpleRecord() {
                     )}
                   />
                 </div>
-                <FormField
-                  control={form.control}
-                  name="userId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <label className="text-sm font-medium text-foreground mb-1.5 block">Your name or ID</label>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="e.g. Jane Smith or jane@company.com"
-                          className="rounded-xl text-sm"
-                          data-testid="simple-input-userid"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               </div>
             )}
 

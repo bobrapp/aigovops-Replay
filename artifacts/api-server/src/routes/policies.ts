@@ -10,11 +10,12 @@ import {
 } from "@workspace/api-zod";
 import { generateId } from "../lib/id";
 import { validatePolicyRule } from "../lib/policy-eval";
-import { requireAdminAuth } from "./admin";
+import { requireAuth } from "../middlewares/requireAuth";
+import { requireAdmin } from "../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-router.get("/policies", async (_req, res) => {
+router.get("/policies", requireAuth, async (_req, res) => {
   const items = await db.select().from(policiesTable);
   const [totalResult] = await db.select({ count: count() }).from(policiesTable);
 
@@ -24,7 +25,7 @@ router.get("/policies", async (_req, res) => {
   });
 });
 
-router.post("/policies", requireAdminAuth, async (req, res) => {
+router.post("/policies", requireAuth, requireAdmin, async (req, res) => {
   const body = CreatePolicyBody.parse(req.body);
 
   const ruleError = validatePolicyRule(body.rule);
@@ -51,7 +52,7 @@ router.post("/policies", requireAdminAuth, async (req, res) => {
   res.status(201).json(toPolicyDto(policy));
 });
 
-router.get("/policies/:id", async (req, res) => {
+router.get("/policies/:id", requireAuth, async (req, res) => {
   const { id } = GetPolicyParams.parse(req.params);
   const [policy] = await db.select().from(policiesTable).where(eq(policiesTable.id, id));
 
@@ -63,7 +64,7 @@ router.get("/policies/:id", async (req, res) => {
   res.json(toPolicyDto(policy));
 });
 
-router.patch("/policies/:id", requireAdminAuth, async (req, res) => {
+router.patch("/policies/:id", requireAuth, requireAdmin, async (req, res) => {
   const { id } = UpdatePolicyParams.parse(req.params);
   const body = UpdatePolicyBody.parse(req.body);
 
@@ -99,7 +100,7 @@ router.patch("/policies/:id", requireAdminAuth, async (req, res) => {
   res.json(toPolicyDto(policy));
 });
 
-router.delete("/policies/:id", requireAdminAuth, async (req, res) => {
+router.delete("/policies/:id", requireAuth, requireAdmin, async (req, res) => {
   const { id } = DeletePolicyParams.parse(req.params);
   await db.delete(policiesTable).where(eq(policiesTable.id, id));
   res.status(204).send();
