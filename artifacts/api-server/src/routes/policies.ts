@@ -1,3 +1,42 @@
+/**
+ * Policy management routes — security posture summary
+ *
+ * The original vulnerability (critical RCE) was: POST /api/policies accepted
+ * any string as a rule and stored it; POST /api/interactions then executed every
+ * enabled rule via `new Function(rule)` in the server process with no sandbox,
+ * timeout, or privilege boundary — allowing any caller to run arbitrary JS, read
+ * process.env, call process.exit(), or block the event loop.
+ *
+ * Defence-in-depth layers now applied:
+ *
+ *  Layer 1 — Authentication + authorisation (this file)
+ *    Every policy route requires TWO middleware checks:
+ *      requireAuth      → rejects unauthenticated requests (401)
+ *      requireAdminAuth → rejects non-admin sessions (403)
+ *    Non-admin callers cannot read, create, update, or delete any policy rule.
+ *
+ *  Layer 2 — Schema validation (Zod, generated from OpenAPI)
+ *    CreatePolicyBody / UpdatePolicyBody enforce:
+ *      rule: zod.string().min(1).max(500)
+ *    Payloads with a missing, empty, or oversized rule field are rejected (400)
+ *    before route logic runs.
+ *
+ *  Layer 3 — Semantic validation (validatePolicyRule, lib/policy-eval.ts)
+ *    Called on every POST and PATCH before storing the rule. It runs the full
+ *    tokenizer + AST parser against the rule string. Any identifier not in
+ *    ALLOWED_VARS, any property not in ALLOWED_PROPS, or any unexpected token
+ *    causes a 422 rejection. Backtick template literals are blocked explicitly.
+ *
+ *  Layer 4 — Safe AST evaluator at execution time (evalPolicyRule, lib/policy-eval.ts)
+ *    `new Function` has been removed entirely. Stored rules are evaluated by
+ *    walking the validated AST. The evaluator can only:
+ *      - read the four allowed variables (prompt, response, model, userId)
+ *      - call the allow-listed string methods (.includes, .startsWith, …)
+ *      - compute comparisons and boolean expressions
+ *    process, globalThis, require, eval, and prototype chains are completely
+ *    unreachable by construction — not by blocklist.
+ */
+
 import { Router, type IRouter } from "express";
 import { db, policiesTable } from "@workspace/db";
 import { eq, count } from "drizzle-orm";

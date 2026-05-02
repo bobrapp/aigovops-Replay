@@ -139,7 +139,12 @@ router.post("/interactions", requireAuth, async (req, res) => {
   // requireAuth guarantees req.user is set before this handler is reached.
   const uid = userId(req);
 
-  // Evaluate policies before the locked transaction (read-only, no chain state needed)
+  // Evaluate policies before the locked transaction (read-only, no chain state needed).
+  // Safety: evalPolicyRule uses a tokenizer + AST evaluator with zero code-execution
+  // paths — new Function has been completely removed. Only the four allowed variables
+  // (prompt, response, model, userId) and allow-listed string methods are reachable.
+  // Rules were validated by validatePolicyRule() at storage time (POST/PATCH policies)
+  // so mal-formed expressions are rejected before they ever reach this path.
   const policies = await db
     .select()
     .from(policiesTable)
