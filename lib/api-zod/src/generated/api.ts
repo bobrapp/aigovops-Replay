@@ -262,6 +262,11 @@ export const GetChainResponse = zod.object({
     .describe(
       "Number of receipts whose prevHash does not match any existing chainHash",
     ),
+  genesisCount: zod
+    .number()
+    .describe(
+      "Number of receipts with null prevHash; a valid non-empty chain has exactly one",
+    ),
   entries: zod
     .array(
       zod.object({

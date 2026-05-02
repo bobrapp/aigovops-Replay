@@ -251,16 +251,13 @@ router.get("/interactions/:id/verify", async (req, res) => {
   `);
   const lineageForked = Number((lineageForkResult.rows[0] as { fork_in_lineage: string } | undefined)?.fork_in_lineage ?? 0) > 0;
 
-  // 5. Genesis uniqueness: if this receipt is a genesis (null prevHash), verify there is
-  //    exactly one genesis entry. Multiple genesis nodes indicate a corrupted chain root.
-  let multipleGenesisNodes = false;
-  if (interaction.prevHash === null) {
-    const genesisResult = await db.execute<{ genesis_count: string }>(sql`
-      SELECT COUNT(*) AS genesis_count FROM interactions WHERE prev_hash IS NULL
-    `);
-    const genesisCount = Number((genesisResult.rows[0] as { genesis_count: string } | undefined)?.genesis_count ?? 0);
-    multipleGenesisNodes = genesisCount > 1;
-  }
+  // 5. Global genesis uniqueness: a valid chain has exactly one genesis entry (prev_hash IS NULL).
+  //    Multiple genesis nodes corrupt the chain root regardless of which receipt is being verified.
+  const genesisResult = await db.execute<{ genesis_count: string }>(sql`
+    SELECT COUNT(*) AS genesis_count FROM interactions WHERE prev_hash IS NULL
+  `);
+  const genesisCount = Number((genesisResult.rows[0] as { genesis_count: string } | undefined)?.genesis_count ?? 0);
+  const multipleGenesisNodes = genesisCount > 1;
 
   const chainIntact = chainHashSelfConsistent && predecessorExists && !lineageForked && !multipleGenesisNodes;
   const valid = promptHashMatch && responseHashMatch && chainIntact;

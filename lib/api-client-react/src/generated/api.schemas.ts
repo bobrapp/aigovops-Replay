@@ -183,6 +183,8 @@ export interface ChainSummary {
   forkCount: number;
   /** Number of receipts whose prevHash does not match any existing chainHash */
   brokenLinkCount: number;
+  /** Number of receipts with null prevHash; a valid non-empty chain has exactly one */
+  genesisCount: number;
   /** Most recent receipts (up to 100) for display. Integrity is verified over the full chain. */
   entries: ChainSummaryEntriesItem[];
 }
