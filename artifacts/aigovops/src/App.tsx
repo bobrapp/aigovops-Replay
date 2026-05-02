@@ -5,8 +5,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { ThemeProvider } from "./components/theme-provider";
 import { Layout } from "./components/layout";
+import { ModeProvider, useMode } from "./context/mode";
 
-// Pages
+// Expert pages
 import Dashboard from "./pages/dashboard";
 import ReceiptsList from "./pages/receipts/list";
 import ReceiptDetail from "./pages/receipts/detail";
@@ -18,13 +19,30 @@ import VerifyReceipt from "./pages/verify";
 import DemoPage from "./pages/demo";
 import SpecPage from "./pages/spec";
 
+// Simple pages
+import SimpleHome from "./pages/simple/home";
+import SimpleRecord from "./pages/simple/record";
+import SimpleHistory from "./pages/simple/history";
+import SimpleCheck from "./pages/simple/check";
+
 const queryClient = new QueryClient();
 
 function Router() {
+  const { mode } = useMode();
+  const isSimple = mode === "simple";
+
   return (
     <Layout>
       <Switch>
-        <Route path="/" component={Dashboard} />
+        {/* Root: mode-aware home */}
+        <Route path="/" component={isSimple ? SimpleHome : Dashboard} />
+
+        {/* Simple-mode routes */}
+        <Route path="/record" component={SimpleRecord} />
+        <Route path="/history" component={SimpleHistory} />
+        <Route path="/check" component={SimpleCheck} />
+
+        {/* Expert routes always available */}
         <Route path="/demo" component={DemoPage} />
         <Route path="/receipts" component={ReceiptsList} />
         <Route path="/receipts/new" component={SubmitReceipt} />
@@ -45,9 +63,11 @@ function App() {
     <ThemeProvider defaultTheme="dark" storageKey="aigovops-theme">
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
+          <ModeProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <Router />
+            </WouterRouter>
+          </ModeProvider>
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
