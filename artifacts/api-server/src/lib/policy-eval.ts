@@ -1,162 +1,438 @@
-import vm from "vm";
-
 /**
- * Identifiers that must never appear as identifiers in a policy rule expression.
- * These are checked against the rule with string-literal content removed to avoid
- * false positives on rules like `!response.includes("process")`.
+ * Completely safe policy-rule evaluator.
+ *
+ * Security model:
+ * - Zero code-execution paths: no vm, eval, or new Function at any point.
+ * - Rules are tokenized into an explicit token stream, parsed into a constrained
+ *   AST, then evaluated by walking only the allow-listed node kinds.
+ * - Any identifier that is not in ALLOWED_VARS is rejected by the parser.
+ * - Any property name that is not in ALLOWED_PROPS is rejected by the parser.
+ * - The evaluator only invokes bound native string methods on known-safe strings.
+ * - Prototype chain, globalThis, process, require, etc. are completely unreachable.
  */
-const BLOCKED_IDENTIFIERS = new Set([
-  "process",
-  "require",
-  "import",
-  "eval",
-  "Function",
-  "globalThis",
-  "global",
-  "__proto__",
-  "constructor",
-  "prototype",
-  "fetch",
-  "XMLHttpRequest",
-  "WebSocket",
-  "Buffer",
-  "setTimeout",
-  "setInterval",
-  "clearTimeout",
-  "clearInterval",
-  "setImmediate",
-  "clearImmediate",
-  "queueMicrotask",
-  "Promise",
-  "Proxy",
-  "Reflect",
-  "Symbol",
-  "WeakRef",
-  "FinalizationRegistry",
-  "Worker",
-  "SharedArrayBuffer",
-  "Atomics",
-  "crypto",
-  "module",
-  "exports",
-  "__dirname",
-  "__filename",
-  "this",
+
+const ALLOWED_VARS = new Set(["prompt", "response", "model", "userId"]);
+
+const ALLOWED_STRING_METHODS = new Set([
+  "includes",
+  "startsWith",
+  "endsWith",
+  "toLowerCase",
+  "toUpperCase",
+  "trim",
+  "split",
 ]);
 
-/** Maximum allowed length for a rule expression string. */
+const ALLOWED_PROPS = new Set(["length", ...ALLOWED_STRING_METHODS]);
+
 const MAX_RULE_LENGTH = 500;
 
-/** Maximum milliseconds a rule may run during evaluation. */
-const EVAL_TIMEOUT_MS = 50;
+// ─── Tokenizer ────────────────────────────────────────────────────────────────
 
-/**
- * Strip the text content of string literals so that blocked identifiers
- * inside string arguments (e.g. `prompt.includes("process")`) do not
- * trigger false positives in the identifier check.
- */
-function stripStringLiterals(code: string): string {
-  return code
-    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
-    .replace(/'(?:[^'\\]|\\.)*'/g, "''");
+type TK =
+  | "str"
+  | "num"
+  | "bool"
+  | "null"
+  | "id"
+  | "."
+  | "("
+  | ")"
+  | ","
+  | "!"
+  | "typeof"
+  | "&&"
+  | "||"
+  | "==="
+  | "!=="
+  | "<"
+  | ">"
+  | "<="
+  | ">="
+  | "eof";
+
+interface Tok {
+  k: TK;
+  v: unknown;
 }
 
+function tokenize(src: string): Tok[] {
+  const toks: Tok[] = [];
+  let i = 0;
+
+  while (i < src.length) {
+    if (/\s/.test(src[i]!)) {
+      i++;
+      continue;
+    }
+
+    // String literals (single- and double-quoted)
+    if (src[i] === '"' || src[i] === "'") {
+      const q = src[i++];
+      let s = "";
+      while (i < src.length && src[i] !== q) {
+        if (src[i] === "\\") {
+          i++;
+          const esc = src[i++];
+          switch (esc) {
+            case "n":
+              s += "\n";
+              break;
+            case "t":
+              s += "\t";
+              break;
+            case "r":
+              s += "\r";
+              break;
+            default:
+              s += esc;
+          }
+        } else {
+          s += src[i++];
+        }
+      }
+      if (i >= src.length) throw new SyntaxError("Unterminated string literal");
+      i++;
+      toks.push({ k: "str", v: s });
+      continue;
+    }
+
+    // Number literals
+    if (/[0-9]/.test(src[i]!)) {
+      let n = "";
+      while (i < src.length && /[0-9.]/.test(src[i]!)) n += src[i++];
+      toks.push({ k: "num", v: Number(n) });
+      continue;
+    }
+
+    // Identifiers and reserved keywords
+    if (/[a-zA-Z_]/.test(src[i]!)) {
+      let id = "";
+      while (i < src.length && /\w/.test(src[i]!)) id += src[i++];
+      if (id === "true") toks.push({ k: "bool", v: true });
+      else if (id === "false") toks.push({ k: "bool", v: false });
+      else if (id === "null") toks.push({ k: "null", v: null });
+      else if (id === "typeof") toks.push({ k: "typeof", v: null });
+      else toks.push({ k: "id", v: id });
+      continue;
+    }
+
+    // Multi-character operators (longest-match first)
+    const s3 = src.slice(i, i + 3);
+    if (s3 === "===") {
+      toks.push({ k: "===", v: null });
+      i += 3;
+      continue;
+    }
+    if (s3 === "!==") {
+      toks.push({ k: "!==", v: null });
+      i += 3;
+      continue;
+    }
+
+    const s2 = src.slice(i, i + 2);
+    if (s2 === "&&") {
+      toks.push({ k: "&&", v: null });
+      i += 2;
+      continue;
+    }
+    if (s2 === "||") {
+      toks.push({ k: "||", v: null });
+      i += 2;
+      continue;
+    }
+    if (s2 === "<=") {
+      toks.push({ k: "<=", v: null });
+      i += 2;
+      continue;
+    }
+    if (s2 === ">=") {
+      toks.push({ k: ">=", v: null });
+      i += 2;
+      continue;
+    }
+
+    const c = src[i++];
+    switch (c) {
+      case ".":
+        toks.push({ k: ".", v: null });
+        break;
+      case "(":
+        toks.push({ k: "(", v: null });
+        break;
+      case ")":
+        toks.push({ k: ")", v: null });
+        break;
+      case ",":
+        toks.push({ k: ",", v: null });
+        break;
+      case "!":
+        toks.push({ k: "!", v: null });
+        break;
+      case "<":
+        toks.push({ k: "<", v: null });
+        break;
+      case ">":
+        toks.push({ k: ">", v: null });
+        break;
+      default:
+        throw new SyntaxError(`Unexpected character: "${c}"`);
+    }
+  }
+
+  toks.push({ k: "eof", v: null });
+  return toks;
+}
+
+// ─── AST ─────────────────────────────────────────────────────────────────────
+
+type AstNode =
+  | { k: "lit"; v: unknown }
+  | { k: "var"; n: string }
+  | { k: "prop"; obj: AstNode; prop: string }
+  | { k: "call"; callee: AstNode; args: AstNode[] }
+  | { k: "not"; expr: AstNode }
+  | { k: "typeof"; expr: AstNode }
+  | { k: "bin"; op: string; l: AstNode; r: AstNode };
+
+// ─── Parser ───────────────────────────────────────────────────────────────────
+
+function parse(toks: Tok[]): AstNode {
+  let p = 0;
+
+  const peek = (): Tok => toks[p]!;
+  const eat = (k?: TK): Tok => {
+    const t = toks[p++]!;
+    if (k && t.k !== k) throw new SyntaxError(`Expected "${k}", got "${t.k}"`);
+    return t;
+  };
+  const check = (...ks: TK[]): boolean => (ks as string[]).includes(peek().k);
+
+  function orExpr(): AstNode {
+    let l = andExpr();
+    while (check("||")) {
+      eat();
+      l = { k: "bin", op: "||", l, r: andExpr() };
+    }
+    return l;
+  }
+
+  function andExpr(): AstNode {
+    let l = eqExpr();
+    while (check("&&")) {
+      eat();
+      l = { k: "bin", op: "&&", l, r: eqExpr() };
+    }
+    return l;
+  }
+
+  function eqExpr(): AstNode {
+    let l = relExpr();
+    while (check("===", "!==")) {
+      const op = eat().k as string;
+      l = { k: "bin", op, l, r: relExpr() };
+    }
+    return l;
+  }
+
+  function relExpr(): AstNode {
+    let l = unary();
+    while (check("<", ">", "<=", ">=")) {
+      const op = eat().k as string;
+      l = { k: "bin", op, l, r: unary() };
+    }
+    return l;
+  }
+
+  function unary(): AstNode {
+    if (check("!")) {
+      eat();
+      return { k: "not", expr: unary() };
+    }
+    if (check("typeof")) {
+      eat();
+      return { k: "typeof", expr: postfix() };
+    }
+    return postfix();
+  }
+
+  function postfix(): AstNode {
+    let node = primary();
+    while (true) {
+      if (check(".")) {
+        eat();
+        const tok = peek();
+        if (tok.k !== "id")
+          throw new SyntaxError("Expected property name after '.'");
+        eat();
+        const prop = tok.v as string;
+        if (!ALLOWED_PROPS.has(prop))
+          throw new Error(
+            `Property "${prop}" is not allowed. Allowed: ${[...ALLOWED_PROPS].join(", ")}`,
+          );
+        node = { k: "prop", obj: node, prop };
+      } else if (check("(")) {
+        eat();
+        const args: AstNode[] = [];
+        if (!check(")")) {
+          args.push(orExpr());
+          while (check(",")) {
+            eat();
+            args.push(orExpr());
+          }
+        }
+        eat(")");
+        node = { k: "call", callee: node, args };
+      } else {
+        break;
+      }
+    }
+    return node;
+  }
+
+  function primary(): AstNode {
+    const t = peek();
+    if (t.k === "str" || t.k === "num" || t.k === "bool" || t.k === "null") {
+      eat();
+      return { k: "lit", v: t.v };
+    }
+    if (t.k === "id") {
+      eat();
+      const name = t.v as string;
+      if (!ALLOWED_VARS.has(name))
+        throw new Error(
+          `Identifier "${name}" is not allowed. Allowed variables: ${[...ALLOWED_VARS].join(", ")}`,
+        );
+      return { k: "var", n: name };
+    }
+    if (t.k === "(") {
+      eat();
+      const e = orExpr();
+      eat(")");
+      return e;
+    }
+    throw new SyntaxError(`Unexpected token: "${t.k}"`);
+  }
+
+  const ast = orExpr();
+  if (peek().k !== "eof")
+    throw new SyntaxError(
+      `Unexpected token after end of expression: "${peek().k}"`,
+    );
+  return ast;
+}
+
+// ─── Evaluator ────────────────────────────────────────────────────────────────
+
+type RuleCtx = {
+  prompt: string;
+  response: string;
+  model: string;
+  userId: string;
+};
+
+function evalAst(node: AstNode, ctx: RuleCtx): unknown {
+  switch (node.k) {
+    case "lit":
+      return node.v;
+
+    case "var":
+      return ctx[node.n as keyof RuleCtx];
+
+    case "not":
+      return !evalAst(node.expr, ctx);
+
+    case "typeof":
+      return typeof evalAst(node.expr, ctx);
+
+    case "prop": {
+      const obj = evalAst(node.obj, ctx);
+      if (node.prop === "length") {
+        if (typeof obj === "string" || Array.isArray(obj)) return obj.length;
+        return 0;
+      }
+      if (typeof obj !== "string") {
+        throw new TypeError(`Cannot call .${node.prop}() on a non-string value`);
+      }
+      // ALLOWED_PROPS enforcement already happened at parse time;
+      // all remaining props are safe string methods.
+      const strMethods = obj as unknown as Record<string, (...a: unknown[]) => unknown>;
+      return strMethods[node.prop].bind(obj);
+    }
+
+    case "call": {
+      const fn = evalAst(node.callee, ctx);
+      if (typeof fn !== "function") throw new TypeError("Callee is not callable");
+      const args = node.args.map((a) => evalAst(a, ctx));
+      return (fn as (...a: unknown[]) => unknown)(...args);
+    }
+
+    case "bin": {
+      const { op, l, r } = node;
+      if (op === "&&") return evalAst(l, ctx) && evalAst(r, ctx);
+      if (op === "||") return evalAst(l, ctx) || evalAst(r, ctx);
+      const lv = evalAst(l, ctx);
+      const rv = evalAst(r, ctx);
+      switch (op) {
+        case "===":
+          return lv === rv;
+        case "!==":
+          return lv !== rv;
+        case "<":
+          return (lv as number) < (rv as number);
+        case ">":
+          return (lv as number) > (rv as number);
+        case "<=":
+          return (lv as number) <= (rv as number);
+        case ">=":
+          return (lv as number) >= (rv as number);
+        default:
+          throw new Error(`Unknown operator: "${op}"`);
+      }
+    }
+  }
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
 /**
- * Validate a policy rule expression before storing it.
- * Returns null if the rule is acceptable, or a human-readable error string.
+ * Validate a policy rule expression before it is stored.
+ * Returns null if the rule is valid, or a human-readable error string.
  *
- * This is a save-time gate that rejects rules containing dangerous identifiers
- * and syntactically invalid expressions.
+ * Uses the tokenizer + parser as the sole validation mechanism —
+ * no regex identifier-blocklist that can be bypassed via encoding.
  */
 export function validatePolicyRule(rule: string): string | null {
-  if (!rule || rule.trim().length === 0) {
-    return "Rule expression cannot be empty";
-  }
-  if (rule.length > MAX_RULE_LENGTH) {
+  if (!rule || rule.trim().length === 0) return "Rule expression cannot be empty";
+  if (rule.length > MAX_RULE_LENGTH)
     return `Rule expression must be ${MAX_RULE_LENGTH} characters or fewer (got ${rule.length})`;
-  }
-
-  // Template literals can embed arbitrary expressions — disallow them entirely.
-  if (rule.includes("`")) {
+  if (rule.includes("`"))
     return "Template literals (backticks) are not allowed in rule expressions";
-  }
 
-  // Strip string literals before checking identifiers to avoid false positives
-  // on rules like `!response.includes("process")`.
-  const codeWithoutStrings = stripStringLiterals(rule);
-
-  for (const id of BLOCKED_IDENTIFIERS) {
-    const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (new RegExp(`\\b${escaped}\\b`).test(codeWithoutStrings)) {
-      return `Identifier "${id}" is not permitted in rule expressions`;
-    }
-  }
-
-  // Function declarations and zero-argument arrow functions can be used to
-  // introduce a new scope and bypass the identifier blocklist indirectly.
-  if (/\bfunction\s*\(/.test(codeWithoutStrings) || /\(\s*\)\s*=>/.test(codeWithoutStrings)) {
-    return "Function declarations and zero-argument arrow functions are not allowed in rule expressions";
-  }
-
-  // Dry-run in a minimal vm context to catch syntax errors before saving.
-  // We use empty strings so runtime errors on missing methods are expected and ignored.
   try {
-    const sandbox = Object.create(null) as Record<string, unknown>;
-    sandbox.prompt = "";
-    sandbox.response = "";
-    sandbox.model = "";
-    sandbox.userId = "";
-    vm.createContext(sandbox);
-    vm.runInContext(`!!(${rule})`, sandbox, { timeout: EVAL_TIMEOUT_MS });
+    const toks = tokenize(rule);
+    parse(toks);
+    return null;
   } catch (e: unknown) {
-    if (e instanceof SyntaxError) {
-      return `Syntax error in rule expression: ${(e as Error).message}`;
-    }
-    // Other runtime errors on the empty sandbox are acceptable at this stage
+    return (e as Error).message ?? "Invalid rule expression";
   }
-
-  return null;
 }
 
 /**
- * Safely evaluate a policy rule expression inside a sandboxed vm context.
+ * Safely evaluate a policy rule expression against an interaction context.
+ * Returns true (pass) if the rule succeeds, false if it fails.
  *
- * Security controls:
- * - Null-prototype sandbox: the context object has no prototype chain, which
- *   eliminates the most common prototype-based sandbox escape vectors.
- * - Only `prompt`, `response`, `model`, `userId` are in scope — no Node globals.
- * - Blocked-identifier check re-run at eval time so rules that bypassed the
- *   save-time validator (e.g. direct DB writes) are still rejected.
- * - 50ms timeout prevents infinite loops from blocking the event loop.
- *
- * Returns `true` if the rule passes (or errors), `false` if it fails.
- * Governance policy: a broken rule should not block all interactions.
+ * Errors default to passing so a misconfigured rule does not block all interactions.
  */
 export function evalPolicyRule(
   rule: string,
   ctx: { prompt: string; response: string; model: string; userId: string },
 ): boolean {
-  // Re-validate at eval time as a defense-in-depth measure (catches direct DB writes)
-  const validationError = validatePolicyRule(rule);
-  if (validationError !== null) {
-    return true; // Treat invalid/dangerous rules as passing — do not execute them
-  }
-
   try {
-    const sandbox = Object.create(null) as Record<string, unknown>;
-    sandbox.prompt = ctx.prompt;
-    sandbox.response = ctx.response;
-    sandbox.model = ctx.model;
-    sandbox.userId = ctx.userId;
-    vm.createContext(sandbox);
-
-    const result = vm.runInContext(`!!(${rule})`, sandbox, {
-      timeout: EVAL_TIMEOUT_MS,
-    });
-
-    return result === true;
+    const toks = tokenize(rule);
+    const ast = parse(toks);
+    return !!evalAst(ast, ctx);
   } catch {
-    // Any runtime error or timeout: treat as passing rather than blocking interactions
     return true;
   }
 }

@@ -6,6 +6,9 @@ import NotFound from "@/pages/not-found";
 import { ThemeProvider } from "./components/theme-provider";
 import { Layout } from "./components/layout";
 import { ModeProvider, useMode } from "./context/mode";
+import { setAuthTokenGetter } from "@workspace/api-client-react";
+
+setAuthTokenGetter(() => import.meta.env.VITE_ADMIN_API_KEY ?? null);
 
 // Expert pages
 import Dashboard from "./pages/dashboard";

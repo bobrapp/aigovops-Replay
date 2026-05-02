@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db, policiesTable } from "@workspace/db";
 import { eq, count } from "drizzle-orm";
 import {
@@ -13,6 +13,36 @@ import { validatePolicyRule } from "../lib/policy-eval";
 
 const router: IRouter = Router();
 
+/**
+ * Require a valid admin bearer token for policy-mutation endpoints.
+ *
+ * Token is read from the ADMIN_API_KEY environment variable and must be
+ * supplied as `Authorization: Bearer <token>` in the request.
+ *
+ * This guard prevents unauthenticated callers from creating or modifying
+ * policy rules, which are evaluated server-side against every new interaction.
+ */
+function requireAdminAuth(req: Request, res: Response, next: NextFunction): void {
+  const adminKey = process.env.ADMIN_API_KEY;
+  if (!adminKey) {
+    res.status(503).json({
+      error:
+        "Policy management is not available: ADMIN_API_KEY is not configured on this server.",
+    });
+    return;
+  }
+
+  const auth = req.headers.authorization;
+  const token = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
+
+  if (!token || token !== adminKey) {
+    res.status(401).json({ error: "Unauthorized: a valid admin token is required." });
+    return;
+  }
+
+  next();
+}
+
 router.get("/policies", async (_req, res) => {
   const items = await db.select().from(policiesTable);
   const [totalResult] = await db.select({ count: count() }).from(policiesTable);
@@ -23,7 +53,7 @@ router.get("/policies", async (_req, res) => {
   });
 });
 
-router.post("/policies", async (req, res) => {
+router.post("/policies", requireAdminAuth, async (req, res) => {
   const body = CreatePolicyBody.parse(req.body);
 
   const ruleError = validatePolicyRule(body.rule);
@@ -62,7 +92,7 @@ router.get("/policies/:id", async (req, res) => {
   res.json(toPolicyDto(policy));
 });
 
-router.patch("/policies/:id", async (req, res) => {
+router.patch("/policies/:id", requireAdminAuth, async (req, res) => {
   const { id } = UpdatePolicyParams.parse(req.params);
   const body = UpdatePolicyBody.parse(req.body);
 
@@ -98,7 +128,7 @@ router.patch("/policies/:id", async (req, res) => {
   res.json(toPolicyDto(policy));
 });
 
-router.delete("/policies/:id", async (req, res) => {
+router.delete("/policies/:id", requireAdminAuth, async (req, res) => {
   const { id } = DeletePolicyParams.parse(req.params);
   await db.delete(policiesTable).where(eq(policiesTable.id, id));
   res.status(204).send();
