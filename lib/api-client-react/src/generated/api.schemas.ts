@@ -84,9 +84,28 @@ export interface InteractionList {
 }
 
 export interface CreateInteractionBody {
+  /**
+   * The AI prompt text. Maximum 32 KiB to prevent per-field resource exhaustion.
+   * @minLength 1
+   * @maxLength 32768
+   */
   prompt: string;
+  /**
+   * The AI response text. Maximum 32 KiB to prevent per-field resource exhaustion.
+   * @minLength 1
+   * @maxLength 32768
+   */
   response: string;
+  /**
+   * Model identifier string (e.g. "gpt-4o"). Maximum 200 characters.
+   * @minLength 1
+   * @maxLength 200
+   */
   model: string;
+  /**
+   * Optional classification tags. Maximum 50 tags, each up to 100 characters.
+   * @maxItems 50
+   */
   tags?: string[];
 }
 

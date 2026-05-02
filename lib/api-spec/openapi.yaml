@@ -580,14 +580,26 @@ components:
       properties:
         prompt:
           type: string
+          minLength: 1
+          maxLength: 32768
+          description: The AI prompt text. Maximum 32 KiB to prevent per-field resource exhaustion.
         response:
           type: string
+          minLength: 1
+          maxLength: 32768
+          description: The AI response text. Maximum 32 KiB to prevent per-field resource exhaustion.
         model:
           type: string
+          minLength: 1
+          maxLength: 200
+          description: Model identifier string (e.g. "gpt-4o"). Maximum 200 characters.
         tags:
           type: array
+          maxItems: 50
           items:
             type: string
+            maxLength: 100
+          description: Optional classification tags. Maximum 50 tags, each up to 100 characters.
       required:
         - prompt
         - response

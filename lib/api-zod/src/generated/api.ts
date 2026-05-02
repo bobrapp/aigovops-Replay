@@ -151,11 +151,45 @@ export const ListInteractionsResponse = zod.object({
 /**
  * @summary Create a new AI interaction receipt
  */
+export const createInteractionBodyPromptMax = 32768;
+
+export const createInteractionBodyResponseMax = 32768;
+
+export const createInteractionBodyModelMax = 200;
+
+export const createInteractionBodyTagsItemMax = 100;
+
+export const createInteractionBodyTagsMax = 50;
+
 export const CreateInteractionBody = zod.object({
-  prompt: zod.string(),
-  response: zod.string(),
-  model: zod.string(),
-  tags: zod.array(zod.string()).optional(),
+  prompt: zod
+    .string()
+    .min(1)
+    .max(createInteractionBodyPromptMax)
+    .describe(
+      "The AI prompt text. Maximum 32 KiB to prevent per-field resource exhaustion.",
+    ),
+  response: zod
+    .string()
+    .min(1)
+    .max(createInteractionBodyResponseMax)
+    .describe(
+      "The AI response text. Maximum 32 KiB to prevent per-field resource exhaustion.",
+    ),
+  model: zod
+    .string()
+    .min(1)
+    .max(createInteractionBodyModelMax)
+    .describe(
+      'Model identifier string (e.g. \"gpt-4o\"). Maximum 200 characters.',
+    ),
+  tags: zod
+    .array(zod.string().max(createInteractionBodyTagsItemMax))
+    .max(createInteractionBodyTagsMax)
+    .optional()
+    .describe(
+      "Optional classification tags. Maximum 50 tags, each up to 100 characters.",
+    ),
 });
 
 /**

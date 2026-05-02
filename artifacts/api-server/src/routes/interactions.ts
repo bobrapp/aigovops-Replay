@@ -113,22 +113,29 @@ router.get("/interactions", requireAuth, async (req, res) => {
 
   const where = and(...conditions);
 
+  // Zod coerces query strings to numbers but does not enforce integers.
+  // Math.trunc() ensures PostgreSQL receives an integer LIMIT/OFFSET value;
+  // a float such as 50.5 would cause a DB error without this guard.
+  // The Zod schema already caps limit ≤ 200 and offset ≤ 100 000.
+  const safeLimit = Math.trunc(query.limit);
+  const safeOffset = Math.trunc(query.offset);
+
   const [items, totalResult] = await Promise.all([
     db
       .select()
       .from(interactionsTable)
       .where(where)
       .orderBy(desc(interactionsTable.createdAt))
-      .limit(query.limit)
-      .offset(query.offset),
+      .limit(safeLimit)
+      .offset(safeOffset),
     db.select({ count: count() }).from(interactionsTable).where(where),
   ]);
 
   res.json({
     items: items.map(toInteractionDto),
     total: Number(totalResult[0]?.count ?? 0),
-    limit: query.limit,
-    offset: query.offset,
+    limit: safeLimit,
+    offset: safeOffset,
   });
 });
 
