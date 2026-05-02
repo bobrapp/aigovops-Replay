@@ -33,6 +33,9 @@ minimumReleaseAgeExclude:
   # this setting guards against does not apply to our own packages.
   - '@replit/*'
   - stripe-replit-sync
+  # yaml@2.8.4 fixes GHSA-48c2-rrv3-qjmp and was published on 2026-05-02.
+  # Remove this exclusion after 2026-05-03 once the 1-day window has passed.
+  - yaml
 
 packages:
   - artifacts/*
@@ -158,3 +161,11 @@ overrides:
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
+  # Security vulnerability fixes
+  "picomatch@2": "^2.3.2"
+  "picomatch@4": "^4.0.4"
+  "path-to-regexp": "^8.4.2"
+  "lodash": "^4.18.1"
+  "yaml": "^2.8.4"
+  "brace-expansion@2": "^2.0.3"
+  "postcss": "^8.5.13"
