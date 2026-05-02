@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "je0uypM2SH67tuE9DyiZ-"
+uri = "file://artifacts/aigovops-mobile/assets/images/icon.png"
+type = "image"
+title = "generated_image"
