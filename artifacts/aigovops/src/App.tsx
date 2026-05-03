@@ -8,7 +8,8 @@ import { Layout } from "./components/layout";
 import { ModeProvider, useMode } from "./context/mode";
 import { AdminAuthProvider } from "./context/adminAuth";
 import { useAuth } from "@workspace/replit-auth-web";
-import { Shield, Gauge, Sparkles, Lock, ChevronRight } from "lucide-react";
+import { Shield, Gauge, ChevronRight, ArrowRight } from "lucide-react";
+import { useState } from "react";
 
 // Expert pages
 import Dashboard from "./pages/dashboard";
@@ -59,7 +60,7 @@ function ShieldMascot({ size = 96 }: { size?: number }) {
   );
 }
 
-function LoginScreen() {
+function WelcomeScreen({ onGuest }: { onGuest: () => void }) {
   const { mode, setMode } = useMode();
   const { login } = useAuth();
 
@@ -108,6 +109,20 @@ function LoginScreen() {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Foundation link */}
+          <div className="mt-8 pt-6 border-t border-white/10">
+            <a
+              href="https://www.aigovopsfoundation.org/"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 text-emerald-400 text-sm font-semibold hover:text-emerald-300 transition-colors"
+            >
+              <Shield className="w-4 h-4" />
+              aigovopsfoundation.org
+              <ArrowRight className="w-3 h-3 opacity-60" />
+            </a>
           </div>
         </div>
       </div>
@@ -177,16 +192,26 @@ function LoginScreen() {
             onClick={login}
             className="w-full flex items-center justify-center gap-2.5 rounded-xl py-3.5 font-bold text-sm transition-all hover:opacity-90 active:scale-[0.98]"
             style={{ background: "linear-gradient(135deg, #10B981, #059669)", color: "white" }}
+            data-testid="btn-signin"
           >
             <Shield className="w-4 h-4" />
             Sign in with Replit
             <ChevronRight className="w-4 h-4 opacity-70" />
           </button>
 
-          <div className="flex items-center gap-2 mt-4 justify-center">
-            <Lock className="w-3 h-3 text-white/30" />
-            <span className="text-white/30 text-[11px]">Secure sign-in via Replit OIDC</span>
-          </div>
+          {/* Guest continue */}
+          <button
+            onClick={onGuest}
+            className="w-full mt-3 flex items-center justify-center gap-2 text-white/50 hover:text-white/80 text-sm font-medium transition-colors py-2"
+            data-testid="btn-continue-guest"
+          >
+            Continue without signing in
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+
+          <p className="text-white/25 text-[11px] text-center mt-2 leading-snug">
+            Guest access is read-only. Sign in to create receipts.
+          </p>
         </div>
       </div>
     </div>
@@ -222,20 +247,28 @@ function Router() {
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isLoading, isAuthenticated } = useAuth();
+  const [guestMode, setGuestMode] = useState(() => {
+    try { return localStorage.getItem("aigovops_guest") === "true"; } catch { return false; }
+  });
+
+  function enterGuest() {
+    try { localStorage.setItem("aigovops_guest", "true"); } catch { /* ignore */ }
+    setGuestMode(true);
+  }
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "#0F172A" }}>
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 rounded-full border-2 border-emerald-400/30 border-t-emerald-400 animate-spin" />
-          <div className="text-white/40 font-mono text-xs">Authenticating…</div>
+          <div className="text-white/40 font-mono text-xs">Loading…</div>
         </div>
       </div>
     );
   }
 
-  if (!isAuthenticated) {
-    return <LoginScreen />;
+  if (!isAuthenticated && !guestMode) {
+    return <WelcomeScreen onGuest={enterGuest} />;
   }
 
   return <>{children}</>;
