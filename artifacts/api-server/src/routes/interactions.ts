@@ -466,7 +466,13 @@ router.get("/interactions/:id/verify", requireAuth, async (req, res) => {
   //    depth >= CHAIN_VERIFY_DEPTH_LIMIT (default 10 000). If the result set
   //    contains any row at the depth limit AND that row still has a prev_hash,
   //    the walk was truncated — return 422 to signal the caller.
-  const lineageForkResult = await db.execute<{ fork_in_lineage: string; max_depth: string }>(sql`
+  // Truncation detection: the CTE guard (a.depth < CHAIN_VERIFY_DEPTH_LIMIT) allows
+  // rows at depth CHAIN_VERIFY_DEPTH_LIMIT to be produced (from parents at depth-1).
+  // A row at that exact depth with prev_hash IS NOT NULL means more ancestry exists
+  // that we didn't follow — the walk was genuinely truncated.
+  // A chain whose last ancestor happens to be a genesis node at that exact depth is NOT
+  // truncated (prev_hash IS NULL there), so we only count rows with non-null prev_hash.
+  const lineageForkResult = await db.execute<{ fork_in_lineage: string; truncated_rows: string }>(sql`
     WITH RECURSIVE ancestry AS (
       SELECT id, chain_hash, prev_hash, 0 AS depth
       FROM interactions
@@ -485,14 +491,14 @@ router.get("/interactions/:id/verify", requireAuth, async (req, res) => {
         WHERE prev_hash = ancestry.chain_hash
           AND user_id = ${interaction.userId}
       ) > 1) AS fork_in_lineage,
-      MAX(depth) AS max_depth
+      COUNT(*) FILTER (WHERE depth = ${CHAIN_VERIFY_DEPTH_LIMIT} AND prev_hash IS NOT NULL) AS truncated_rows
     FROM ancestry
   `);
 
-  const maxDepth = Number((lineageForkResult.rows[0] as { fork_in_lineage: string; max_depth: string } | undefined)?.max_depth ?? 0);
-  if (maxDepth >= CHAIN_VERIFY_DEPTH_LIMIT) {
+  const truncatedRows = Number((lineageForkResult.rows[0] as { fork_in_lineage: string; truncated_rows: string } | undefined)?.truncated_rows ?? 0);
+  if (truncatedRows > 0) {
     res.status(422).json({
-      error: `Chain ancestry exceeds the depth limit of ${CHAIN_VERIFY_DEPTH_LIMIT}. Use the chain health endpoint for bulk verification of very long chains.`,
+      error: `Chain ancestry exceeds the depth limit of ${CHAIN_VERIFY_DEPTH_LIMIT}. The ancestry walk was truncated. Use the chain health endpoint for bulk verification of very long chains.`,
     });
     return;
   }
@@ -567,6 +573,12 @@ router.post("/interactions/:id/share-token", requireAuth, async (req, res) => {
     return;
   }
 
+  // Issuer-controlled redaction: the owner decides at share-link generation
+  // time whether prompt/response should be hidden from the recipient.
+  // This flag is stored on the token row and enforced in GET /verify/:id
+  // regardless of what the recipient passes in the query string.
+  const redact = req.body?.redact === true;
+
   const rawToken = randomBytes(32).toString("hex");
   const tokenHash = hashShareToken(rawToken);
   const tokenId = generateId();
@@ -577,14 +589,13 @@ router.post("/interactions/:id/share-token", requireAuth, async (req, res) => {
     interactionId: id,
     userId: uid,
     tokenHash,
+    redact: redact ? "true" : "false",
     expiresAt,
   });
 
   // Build the canonical public URL. The /api prefix is the API base path; the
   // public verify page is served by the web app at /verify/:id, not /api/verify/:id.
-  // We return the raw token so the client can construct or display the URL.
   const origin = `${req.protocol}://${req.get("host") ?? ""}`;
-  // Strip /api suffix that's present when accessed through the proxy
   const base = origin.replace(/\/api\/?$/, "");
   const verifyUrl = `${base}/verify/${id}?token=${rawToken}`;
 
@@ -592,6 +603,7 @@ router.post("/interactions/:id/share-token", requireAuth, async (req, res) => {
     token: rawToken,
     verifyUrl,
     expiresAt: expiresAt.toISOString(),
+    redact,
   });
 });
 
@@ -611,7 +623,8 @@ router.post("/interactions/:id/share-token", requireAuth, async (req, res) => {
 router.get("/verify/:id", async (req, res) => {
   const { id } = GetInteractionParams.parse(req.params);
   const rawToken = typeof req.query["token"] === "string" ? req.query["token"] : null;
-  const redact = req.query["redact"] === "1";
+  // Note: redact is resolved from the token row, NOT from the query string.
+  // This prevents the recipient from bypassing the issuer's privacy choice.
 
   if (!rawToken) {
     res.status(401).json({ error: "Missing share token. Pass ?token=TOKEN in the URL." });
@@ -636,6 +649,10 @@ router.get("/verify/:id", async (req, res) => {
     res.status(401).json({ error: "Share token is invalid or has expired." });
     return;
   }
+
+  // Resolve redaction from the token row — issuer-controlled.
+  // The recipient cannot override this by passing ?redact=1 in the URL.
+  const redact = tokenRow.redact === "true";
 
   const [interaction] = await db
     .select()
@@ -673,8 +690,13 @@ router.get("/verify/:id", async (req, res) => {
     predecessorExists = pred !== undefined;
   }
 
-  // Depth-limited recursive CTE for fork detection
-  const lineageForkResult = await db.execute<{ fork_in_lineage: string; max_depth: string }>(sql`
+  // Depth-limited recursive CTE for fork detection.
+  // Truncation detection: a row produced at depth = CHAIN_VERIFY_DEPTH_LIMIT
+  // (one past the guard) with prev_hash IS NOT NULL means there was more ancestry
+  // to follow — the walk was genuinely cut short. We count only those rows.
+  // A chain that ends cleanly at exactly the limit (all depth-limit rows have
+  // prev_hash IS NULL) is NOT considered truncated.
+  const lineageForkResult = await db.execute<{ fork_in_lineage: string; truncated_rows: string }>(sql`
     WITH RECURSIVE ancestry AS (
       SELECT id, chain_hash, prev_hash, 0 AS depth
       FROM interactions
@@ -693,14 +715,14 @@ router.get("/verify/:id", async (req, res) => {
         WHERE prev_hash = ancestry.chain_hash
           AND user_id = ${interaction.userId}
       ) > 1) AS fork_in_lineage,
-      MAX(depth) AS max_depth
+      COUNT(*) FILTER (WHERE depth = ${CHAIN_VERIFY_DEPTH_LIMIT} AND prev_hash IS NOT NULL) AS truncated_rows
     FROM ancestry
   `);
 
-  const maxDepth = Number((lineageForkResult.rows[0] as { fork_in_lineage: string; max_depth: string } | undefined)?.max_depth ?? 0);
-  if (maxDepth >= CHAIN_VERIFY_DEPTH_LIMIT) {
+  const truncatedRows = Number((lineageForkResult.rows[0] as { fork_in_lineage: string; truncated_rows: string } | undefined)?.truncated_rows ?? 0);
+  if (truncatedRows > 0) {
     res.status(422).json({
-      error: `Chain ancestry exceeds the depth limit of ${CHAIN_VERIFY_DEPTH_LIMIT}.`,
+      error: `Chain ancestry exceeds the depth limit of ${CHAIN_VERIFY_DEPTH_LIMIT}. The ancestry walk was truncated.`,
     });
     return;
   }

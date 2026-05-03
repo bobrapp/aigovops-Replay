@@ -451,12 +451,20 @@ paths:
         read-only public access to this receipt's verification result via
         GET /verify/{id}?token=... — no account required to view it.
         Expiry is configurable via SHARE_TOKEN_EXPIRY_DAYS (default 7 days).
+        The `redact` flag is stored on the token and enforced server-side;
+        the recipient cannot override it.
       parameters:
         - name: id
           in: path
           required: true
           schema:
             type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShareTokenBody"
       responses:
         "201":
           description: Share token created
@@ -476,9 +484,11 @@ paths:
       summary: Public receipt verification via share token (no login required)
       description: >
         Token-gated public endpoint. Validates the share token, then returns the
-        receipt's verification result. The prompt is redacted when ?redact=1 is
-        passed. The response body omits the raw prompt/response when redacted.
+        receipt's verification result. Redaction is controlled by the issuer at
+        share-link generation time (the `redact` field on CreateShareTokenBody)
+        and is enforced server-side — the recipient cannot override it.
         Returns 401 when the token is missing, expired, or invalid.
+        Returns 422 when the chain ancestry walk is truncated by the depth limit.
       security: []
       parameters:
         - name: id
@@ -491,13 +501,6 @@ paths:
           required: true
           schema:
             type: string
-        - name: redact
-          in: query
-          required: false
-          description: Pass "1" to redact the prompt and response from the result.
-          schema:
-            type: string
-            enum: ["0", "1"]
       responses:
         "200":
           description: Public verification result
@@ -1116,6 +1119,22 @@ components:
         - intact
         - tampered
         - verifiedAt
+
+    CreateShareTokenBody:
+      type: object
+      description: >
+        Optional body for POST /interactions/{id}/share-token.
+        The `redact` flag is stored on the token and enforced server-side in
+        GET /verify/{id} — the recipient cannot override it.
+      properties:
+        redact:
+          type: boolean
+          default: false
+          description: >
+            When true, the public verification result will omit the prompt and
+            response regardless of what the link recipient passes in the query
+            string. Use this to share the cryptographic proof without exposing
+            the conversation content.
 
     ShareTokenResult:
       type: object

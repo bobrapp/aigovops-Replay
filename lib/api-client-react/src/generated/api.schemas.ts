@@ -286,6 +286,16 @@ export interface AuditChainStatus {
   verifiedAt: string;
 }
 
+/**
+ * Optional body for POST /interactions/{id}/share-token. The `redact` flag is stored on the token and enforced server-side in GET /verify/{id} — the recipient cannot override it.
+
+ */
+export interface CreateShareTokenBody {
+  /** When true, the public verification result will omit the prompt and response regardless of what the link recipient passes in the query string. Use this to share the cryptographic proof without exposing the conversation content.
+   */
+  redact?: boolean;
+}
+
 export interface ShareTokenResult {
   /** Raw share token to embed in the public verification URL. */
   token: string;
@@ -418,16 +428,4 @@ export const ListInteractionsPolicyStatus = {
 
 export type GetPublicVerificationParams = {
   token: string;
-  /**
-   * Pass "1" to redact the prompt and response from the result.
-   */
-  redact?: GetPublicVerificationRedact;
 };
-
-export type GetPublicVerificationRedact =
-  (typeof GetPublicVerificationRedact)[keyof typeof GetPublicVerificationRedact];
-
-export const GetPublicVerificationRedact = {
-  NUMBER_0: "0",
-  NUMBER_1: "1",
-} as const;

@@ -10,3 +10,6 @@ CREATE TABLE IF NOT EXISTS "share_tokens" (
 
 -- Index for fast lookup by interaction + token_hash during public verify
 CREATE INDEX IF NOT EXISTS "share_tokens_interaction_id_idx" ON "share_tokens" ("interaction_id");
+
+-- Add issuer-controlled redaction flag (added after initial migration)
+ALTER TABLE "share_tokens" ADD COLUMN IF NOT EXISTS "redact" text NOT NULL DEFAULT 'false';

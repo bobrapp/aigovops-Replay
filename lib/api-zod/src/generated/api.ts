@@ -506,7 +506,7 @@ export const GetAuditChainStatusResponse = zod
   );
 
 /**
- * Authenticated, owner-only. Creates a short-lived HMAC token that grants read-only public access to this receipt's verification result via GET /verify/{id}?token=... — no account required to view it. Expiry is configurable via SHARE_TOKEN_EXPIRY_DAYS (default 7 days).
+ * Authenticated, owner-only. Creates a short-lived HMAC token that grants read-only public access to this receipt's verification result via GET /verify/{id}?token=... — no account required to view it. Expiry is configurable via SHARE_TOKEN_EXPIRY_DAYS (default 7 days). The `redact` flag is stored on the token and enforced server-side; the recipient cannot override it.
 
  * @summary Generate a public share token for a receipt's verification result
  */
@@ -514,8 +514,23 @@ export const CreateShareTokenParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const createShareTokenBodyRedactDefault = false;
+
+export const CreateShareTokenBody = zod
+  .object({
+    redact: zod
+      .boolean()
+      .default(createShareTokenBodyRedactDefault)
+      .describe(
+        "When true, the public verification result will omit the prompt and response regardless of what the link recipient passes in the query string. Use this to share the cryptographic proof without exposing the conversation content.\n",
+      ),
+  })
+  .describe(
+    "Optional body for POST \/interactions\/{id}\/share-token. The `redact` flag is stored on the token and enforced server-side in GET \/verify\/{id} — the recipient cannot override it.\n",
+  );
+
 /**
- * Token-gated public endpoint. Validates the share token, then returns the receipt's verification result. The prompt is redacted when ?redact=1 is passed. The response body omits the raw prompt/response when redacted. Returns 401 when the token is missing, expired, or invalid.
+ * Token-gated public endpoint. Validates the share token, then returns the receipt's verification result. Redaction is controlled by the issuer at share-link generation time (the `redact` field on CreateShareTokenBody) and is enforced server-side — the recipient cannot override it. Returns 401 when the token is missing, expired, or invalid. Returns 422 when the chain ancestry walk is truncated by the depth limit.
 
  * @summary Public receipt verification via share token (no login required)
  */
@@ -525,10 +540,6 @@ export const GetPublicVerificationParams = zod.object({
 
 export const GetPublicVerificationQueryParams = zod.object({
   token: zod.coerce.string(),
-  redact: zod
-    .enum(["0", "1"])
-    .optional()
-    .describe('Pass \"1\" to redact the prompt and response from the result.'),
 });
 
 export const GetPublicVerificationResponse = zod

@@ -133,6 +133,14 @@ export const shareTokensTable = pgTable("share_tokens", {
   userId: text("user_id").notNull(),
   tokenHash: text("token_hash").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
+  /**
+   * redact: issuer-controlled redaction flag.
+   * When true, GET /verify/:id will omit the prompt and response from the
+   * public result regardless of what the caller passes in the query string.
+   * This ensures that a privacy decision made at share-link generation time
+   * cannot be overridden by the recipient.
+   */
+  redact: text("redact").notNull().default("false"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

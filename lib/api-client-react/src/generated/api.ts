@@ -25,6 +25,7 @@ import type {
   ChainSummary,
   CreateInteractionBody,
   CreatePolicyBody,
+  CreateShareTokenBody,
   ErrorEnvelope,
   GetPublicVerificationParams,
   HandleBrowserLoginCallbackParams,
@@ -1731,7 +1732,7 @@ export function useGetAuditChainStatus<
 }
 
 /**
- * Authenticated, owner-only. Creates a short-lived HMAC token that grants read-only public access to this receipt's verification result via GET /verify/{id}?token=... — no account required to view it. Expiry is configurable via SHARE_TOKEN_EXPIRY_DAYS (default 7 days).
+ * Authenticated, owner-only. Creates a short-lived HMAC token that grants read-only public access to this receipt's verification result via GET /verify/{id}?token=... — no account required to view it. Expiry is configurable via SHARE_TOKEN_EXPIRY_DAYS (default 7 days). The `redact` flag is stored on the token and enforced server-side; the recipient cannot override it.
 
  * @summary Generate a public share token for a receipt's verification result
  */
@@ -1741,11 +1742,14 @@ export const getCreateShareTokenUrl = (id: string) => {
 
 export const createShareToken = async (
   id: string,
+  createShareTokenBody?: CreateShareTokenBody,
   options?: RequestInit,
 ): Promise<ShareTokenResult> => {
   return customFetch<ShareTokenResult>(getCreateShareTokenUrl(id), {
     ...options,
     method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createShareTokenBody),
   });
 };
 
@@ -1756,14 +1760,14 @@ export const getCreateShareTokenMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof createShareToken>>,
     TError,
-    { id: string },
+    { id: string; data: BodyType<CreateShareTokenBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof createShareToken>>,
   TError,
-  { id: string },
+  { id: string; data: BodyType<CreateShareTokenBody> },
   TContext
 > => {
   const mutationKey = ["createShareToken"];
@@ -1777,11 +1781,11 @@ export const getCreateShareTokenMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof createShareToken>>,
-    { id: string }
+    { id: string; data: BodyType<CreateShareTokenBody> }
   > = (props) => {
-    const { id } = props ?? {};
+    const { id, data } = props ?? {};
 
-    return createShareToken(id, requestOptions);
+    return createShareToken(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -1790,7 +1794,7 @@ export const getCreateShareTokenMutationOptions = <
 export type CreateShareTokenMutationResult = NonNullable<
   Awaited<ReturnType<typeof createShareToken>>
 >;
-
+export type CreateShareTokenMutationBody = BodyType<CreateShareTokenBody>;
 export type CreateShareTokenMutationError = ErrorType<void>;
 
 /**
@@ -1803,21 +1807,21 @@ export const useCreateShareToken = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof createShareToken>>,
     TError,
-    { id: string },
+    { id: string; data: BodyType<CreateShareTokenBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof createShareToken>>,
   TError,
-  { id: string },
+  { id: string; data: BodyType<CreateShareTokenBody> },
   TContext
 > => {
   return useMutation(getCreateShareTokenMutationOptions(options));
 };
 
 /**
- * Token-gated public endpoint. Validates the share token, then returns the receipt's verification result. The prompt is redacted when ?redact=1 is passed. The response body omits the raw prompt/response when redacted. Returns 401 when the token is missing, expired, or invalid.
+ * Token-gated public endpoint. Validates the share token, then returns the receipt's verification result. Redaction is controlled by the issuer at share-link generation time (the `redact` field on CreateShareTokenBody) and is enforced server-side — the recipient cannot override it. Returns 401 when the token is missing, expired, or invalid. Returns 422 when the chain ancestry walk is truncated by the depth limit.
 
  * @summary Public receipt verification via share token (no login required)
  */

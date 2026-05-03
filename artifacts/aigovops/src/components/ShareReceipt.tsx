@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, Mail, Download, Printer, Check, Share2, Link as LinkIcon, Loader2 } from "lucide-react";
+import { Copy, Mail, Download, Printer, Check, Share2, Link as LinkIcon, Loader2, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ShareReceiptProps {
@@ -21,6 +21,13 @@ export function ShareReceipt({ interaction }: ShareReceiptProps) {
   const [copied, setCopied] = useState<"link" | "json" | "verify" | null>(null);
   const [verifyLinkLoading, setVerifyLinkLoading] = useState(false);
   const [verifyLinkError, setVerifyLinkError] = useState<string | null>(null);
+  /**
+   * redactContent: issuer-controlled redaction flag.
+   * When true, POST /share-token is called with { redact: true }, which the server
+   * stores on the token row. GET /verify/:id then omits prompt/response regardless
+   * of what the recipient passes in the URL — the recipient cannot bypass this.
+   */
+  const [redactContent, setRedactContent] = useState(false);
 
   const base = import.meta.env.BASE_URL.replace(/\/$/, "");
   const receiptUrl = `${window.location.origin}${base}/receipts/${interaction.id}`;
@@ -62,6 +69,8 @@ export function ShareReceipt({ interaction }: ShareReceiptProps) {
     try {
       const res = await fetch(`${base}/api/interactions/${interaction.id}/share-token`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ redact: redactContent }),
       });
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const data = (await res.json()) as { token: string; verifyUrl: string; expiresAt: string };
@@ -113,6 +122,26 @@ export function ShareReceipt({ interaction }: ShareReceiptProps) {
         <Share2 className="w-3.5 h-3.5" />
         Share This Receipt
       </div>
+
+      {/* Issuer-controlled redaction toggle — must be set BEFORE generating the link */}
+      <label
+        className="flex items-center gap-2 mb-3 cursor-pointer select-none w-fit"
+        data-testid="share-redact-toggle"
+      >
+        <div
+          className={`relative w-8 h-4 rounded-full transition-colors ${redactContent ? "bg-amber-500" : "bg-muted"}`}
+          onClick={() => setRedactContent((v) => !v)}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${redactContent ? "translate-x-4" : ""}`}
+          />
+        </div>
+        <EyeOff className={`w-3.5 h-3.5 ${redactContent ? "text-amber-500" : "text-muted-foreground"}`} />
+        <span className={`text-xs font-medium ${redactContent ? "text-amber-600" : "text-muted-foreground"}`}>
+          {redactContent ? "Prompt & response hidden from recipient" : "Include prompt & response in shared view"}
+        </span>
+      </label>
+
       <div className="flex items-center gap-2 flex-wrap">
         {/* Share public verification link — calls POST /share-token, copies URL */}
         <Button
