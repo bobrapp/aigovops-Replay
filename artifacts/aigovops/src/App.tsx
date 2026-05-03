@@ -29,6 +29,7 @@ import DemoPage from "./pages/demo";
 import SpecPage from "./pages/spec";
 import AgentsPage from "./pages/agents";
 import AuditPage from "./pages/audit";
+import AlertsPage from "./pages/alerts";
 
 // Simple pages
 import SimpleHome from "./pages/simple/home";
@@ -623,6 +624,7 @@ function Router() {
         <Route path="/policies" component={PoliciesList} />
         <Route path="/policies/new" component={CreatePolicy} />
         <Route path="/audit" component={AuditPage} />
+        <Route path="/alerts" component={AlertsPage} />
         <Route path="/verify" component={VerifyReceipt} />
         <Route path="/spec" component={SpecPage} />
         <Route path="/tutorial" component={TutorialPage} />

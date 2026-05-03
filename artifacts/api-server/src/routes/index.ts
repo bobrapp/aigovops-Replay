@@ -7,6 +7,7 @@ import interactionsRouter from "./interactions";
 import policiesRouter from "./policies";
 import aiRouter from "./ai";
 import exportRouter from "./export";
+import webhooksRouter from "./webhooks";
 const router: IRouter = Router();
 
 router.use(healthRouter);
@@ -17,5 +18,6 @@ router.use(interactionsRouter);
 router.use(policiesRouter);
 router.use(aiRouter);
 router.use(exportRouter);
+router.use(webhooksRouter);
 
 export default router;

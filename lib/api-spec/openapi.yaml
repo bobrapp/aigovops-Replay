@@ -24,6 +24,8 @@ tags:
     description: Portable chain export endpoints (JSONL, HTML bundle, SQLite)
   - name: verification
     description: Public receipt verification and chain health
+  - name: alerts
+    description: Webhook endpoint configuration and delivery tracking for policy violation alerts
 paths:
   /auth/user:
     get:
@@ -615,6 +617,171 @@ paths:
                 format: binary
         "401":
           description: Unauthorized — authentication required
+
+  /webhooks:
+    get:
+      operationId: listWebhooks
+      tags: [alerts]
+      summary: List webhook endpoints
+      description: >
+        Returns all webhook endpoints configured by the authenticated user,
+        ordered newest-first. Secrets are never returned; hasSecret:boolean
+        indicates whether an HMAC secret is configured.
+      responses:
+        "200":
+          description: List of webhook endpoints
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEndpointList"
+        "401":
+          description: Unauthorized
+    post:
+      operationId: createWebhook
+      tags: [alerts]
+      summary: Create a webhook endpoint
+      description: >
+        Creates a new webhook endpoint for the authenticated user. Max 10 endpoints
+        per user. The URL is validated against an SSRF blocklist (private ranges,
+        loopback, link-local addresses are rejected).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWebhookBody"
+      responses:
+        "201":
+          description: Created webhook endpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEndpoint"
+        "400":
+          description: Validation error
+        "401":
+          description: Unauthorized
+        "422":
+          description: URL is private/unsafe, or user has reached the 10-endpoint limit
+
+  /webhooks/{id}:
+    patch:
+      operationId: updateWebhook
+      tags: [alerts]
+      summary: Update a webhook endpoint
+      description: >
+        Partially update a webhook endpoint. All fields are optional. The url field
+        is re-validated against the SSRF blocklist if provided. Passing secret:null
+        clears the existing HMAC secret.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWebhookBody"
+      responses:
+        "200":
+          description: Updated webhook endpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEndpoint"
+        "400":
+          description: Validation error
+        "401":
+          description: Unauthorized
+        "403":
+          description: Endpoint belongs to another user
+        "404":
+          description: Endpoint not found
+        "422":
+          description: URL is private or unsafe
+    delete:
+      operationId: deleteWebhook
+      tags: [alerts]
+      summary: Delete a webhook endpoint
+      description: >
+        Deletes the webhook endpoint and all associated delivery records.
+        This action is irreversible.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Endpoint deleted
+        "401":
+          description: Unauthorized
+        "403":
+          description: Endpoint belongs to another user
+        "404":
+          description: Endpoint not found
+
+  /webhooks/{id}/test:
+    post:
+      operationId: testWebhook
+      tags: [alerts]
+      summary: Send a test webhook
+      description: >
+        Sends a synthetic policy.violation payload to the endpoint URL and returns
+        the HTTP response code. Does not create a delivery record. Useful for
+        verifying that the endpoint is reachable and correctly configured.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Test delivery result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookTestResult"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Endpoint belongs to another user
+        "404":
+          description: Endpoint not found
+
+  /webhooks/{id}/deliveries:
+    get:
+      operationId: listWebhookDeliveries
+      tags: [alerts]
+      summary: List recent deliveries for a webhook endpoint
+      description: >
+        Returns the 50 most recent delivery records for the given endpoint,
+        ordered newest-first. Each record shows status, attempt count,
+        last HTTP response code, and timestamps.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of delivery records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookDeliveryList"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Endpoint belongs to another user
+        "404":
+          description: Endpoint not found
 
 security:
   - bearerAuth: []
@@ -1306,3 +1473,172 @@ components:
         - brokenLinkCount
         - genesisCount
         - entries
+
+    WebhookEndpoint:
+      type: object
+      description: >
+        A user-configured webhook delivery target for policy violation alerts.
+        Secrets are never returned in responses; hasSecret indicates whether one
+        is configured.
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+          format: uri
+        hasSecret:
+          type: boolean
+          description: True when an HMAC secret is configured; the secret itself is never returned.
+        enabled:
+          type: boolean
+        eventFilter:
+          type: string
+          enum: [all, critical, high_and_critical]
+          description: >
+            Controls which violation severities trigger a delivery.
+            all = any violation, critical = critical severity only,
+            high_and_critical = high or critical severity.
+        emailAlerts:
+          type: boolean
+          description: >
+            When true (and SMTP is configured server-side), the user receives an
+            email for critical-severity violations.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - url
+        - hasSecret
+        - enabled
+        - eventFilter
+        - emailAlerts
+        - createdAt
+        - updatedAt
+
+    WebhookEndpointList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WebhookEndpoint"
+        total:
+          type: integer
+      required:
+        - items
+        - total
+
+    CreateWebhookBody:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 2000
+          description: >
+            HTTPS (or HTTP) URL to POST policy violation events to. Private IP
+            ranges, loopback, and link-local addresses are rejected.
+        secret:
+          type: string
+          maxLength: 256
+          description: >
+            Optional HMAC-SHA256 key. When set, every delivery includes an
+            X-AIGovOps-Signature header with "sha256=<hex>" so your endpoint
+            can verify authenticity.
+        eventFilter:
+          type: string
+          enum: [all, critical, high_and_critical]
+          default: all
+        emailAlerts:
+          type: boolean
+          default: false
+          description: >
+            Opt in to email alerts for critical-severity violations.
+            Requires SMTP to be configured server-side.
+
+    UpdateWebhookBody:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 2000
+        secret:
+          type: [string, 'null']
+          maxLength: 256
+          description: Pass null to clear the existing HMAC secret.
+        enabled:
+          type: boolean
+        eventFilter:
+          type: string
+          enum: [all, critical, high_and_critical]
+        emailAlerts:
+          type: boolean
+
+    WebhookTestResult:
+      type: object
+      description: Result of a test webhook delivery attempt.
+      properties:
+        ok:
+          type: boolean
+          description: True when the endpoint returned a 2xx status.
+        statusCode:
+          type: integer
+          nullable: true
+          description: HTTP response code from the endpoint; null if the request failed entirely.
+        error:
+          type: string
+          nullable: true
+          description: Error message if the request failed (timeout, DNS error, etc.).
+      required:
+        - ok
+
+    WebhookDelivery:
+      type: object
+      description: A single webhook delivery attempt record.
+      properties:
+        id:
+          type: string
+        webhookEndpointId:
+          type: string
+        receiptId:
+          type: string
+        status:
+          type: string
+          enum: [pending, delivered, failed]
+        attempts:
+          type: integer
+          description: Number of delivery attempts made so far.
+        lastAttemptAt:
+          type: string
+          format: date-time
+          nullable: true
+        responseCode:
+          type: integer
+          nullable: true
+          description: Last HTTP response code from the endpoint.
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - webhookEndpointId
+        - receiptId
+        - status
+        - attempts
+        - createdAt
+
+    WebhookDeliveryList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WebhookDelivery"
+      required:
+        - items

@@ -23,7 +23,8 @@
     "helmet": "^8.1.0",
     "openid-client": "^6.8.4",
     "pino": "^9",
-    "pino-http": "^10"
+    "pino-http": "^10",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

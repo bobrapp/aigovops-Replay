@@ -3,7 +3,7 @@ import {
   Shield, FileText, Link2, ShieldAlert, CheckCircle,
   Database, Search, Menu, X, BookOpen, Zap, Bot,
   Mic, Clock, Gauge, ChevronRight, ChevronDown, ChevronUp,
-  Heart, ExternalLink, LogIn, GraduationCap, Award, ShieldCheck
+  Heart, ExternalLink, LogIn, GraduationCap, Award, ShieldCheck, Bell
 } from "lucide-react";
 import { ReactNode, useState } from "react";
 import { useMode } from "@/context/mode";
@@ -21,6 +21,7 @@ const expertNav = [
   { label: "Certificate", href: "/certificate", icon: Award, group: "audit" },
   { label: "Policies", href: "/policies", icon: ShieldAlert, group: "policy" },
   { label: "Audit Log", href: "/audit", icon: ShieldCheck, group: "policy" },
+  { label: "Alerts", href: "/alerts", icon: Bell, group: "policy" },
   { label: "Open Spec", href: "/spec", icon: BookOpen, group: "policy" },
 ];
 

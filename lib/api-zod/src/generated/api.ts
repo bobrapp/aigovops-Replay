@@ -611,3 +611,197 @@ export const GetChainHealthResponse = zod
   .describe(
     "Result of a full chain re-verification walk. Every receipt is checked oldest-first: hashes are re-derived and each receipt's prevHash must equal the preceding receipt's chainHash. Capped at CHAIN_HEALTH_ROW_CAP rows (default 50 000) to guard against unbounded scans.\n",
   );
+
+/**
+ * Returns all webhook endpoints configured by the authenticated user, ordered newest-first. Secrets are never returned; hasSecret:boolean indicates whether an HMAC secret is configured.
+
+ * @summary List webhook endpoints
+ */
+export const ListWebhooksResponse = zod.object({
+  items: zod.array(
+    zod
+      .object({
+        id: zod.string(),
+        url: zod.string().url(),
+        hasSecret: zod
+          .boolean()
+          .describe(
+            "True when an HMAC secret is configured; the secret itself is never returned.",
+          ),
+        enabled: zod.boolean(),
+        eventFilter: zod
+          .enum(["all", "critical", "high_and_critical"])
+          .describe(
+            "Controls which violation severities trigger a delivery. all = any violation, critical = critical severity only, high_and_critical = high or critical severity.\n",
+          ),
+        emailAlerts: zod
+          .boolean()
+          .describe(
+            "When true (and SMTP is configured server-side), the user receives an email for critical-severity violations.\n",
+          ),
+        createdAt: zod.coerce.date(),
+        updatedAt: zod.coerce.date(),
+      })
+      .describe(
+        "A user-configured webhook delivery target for policy violation alerts. Secrets are never returned in responses; hasSecret indicates whether one is configured.\n",
+      ),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * Creates a new webhook endpoint for the authenticated user. Max 10 endpoints per user. The URL is validated against an SSRF blocklist (private ranges, loopback, link-local addresses are rejected).
+
+ * @summary Create a webhook endpoint
+ */
+export const createWebhookBodyUrlMax = 2000;
+
+export const createWebhookBodySecretMax = 256;
+
+export const createWebhookBodyEventFilterDefault = `all`;
+export const createWebhookBodyEmailAlertsDefault = false;
+
+export const CreateWebhookBody = zod.object({
+  url: zod
+    .string()
+    .url()
+    .max(createWebhookBodyUrlMax)
+    .describe(
+      "HTTPS (or HTTP) URL to POST policy violation events to. Private IP ranges, loopback, and link-local addresses are rejected.\n",
+    ),
+  secret: zod
+    .string()
+    .max(createWebhookBodySecretMax)
+    .optional()
+    .describe(
+      'Optional HMAC-SHA256 key. When set, every delivery includes an X-AIGovOps-Signature header with \"sha256=<hex>\" so your endpoint can verify authenticity.\n',
+    ),
+  eventFilter: zod
+    .enum(["all", "critical", "high_and_critical"])
+    .default(createWebhookBodyEventFilterDefault),
+  emailAlerts: zod
+    .boolean()
+    .default(createWebhookBodyEmailAlertsDefault)
+    .describe(
+      "Opt in to email alerts for critical-severity violations. Requires SMTP to be configured server-side.\n",
+    ),
+});
+
+/**
+ * Partially update a webhook endpoint. All fields are optional. The url field is re-validated against the SSRF blocklist if provided. Passing secret:null clears the existing HMAC secret.
+
+ * @summary Update a webhook endpoint
+ */
+export const UpdateWebhookParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const updateWebhookBodyUrlMax = 2000;
+
+export const updateWebhookBodySecretMax = 256;
+
+export const UpdateWebhookBody = zod.object({
+  url: zod.string().url().max(updateWebhookBodyUrlMax).optional(),
+  secret: zod
+    .string()
+    .max(updateWebhookBodySecretMax)
+    .nullish()
+    .describe("Pass null to clear the existing HMAC secret."),
+  enabled: zod.boolean().optional(),
+  eventFilter: zod.enum(["all", "critical", "high_and_critical"]).optional(),
+  emailAlerts: zod.boolean().optional(),
+});
+
+export const UpdateWebhookResponse = zod
+  .object({
+    id: zod.string(),
+    url: zod.string().url(),
+    hasSecret: zod
+      .boolean()
+      .describe(
+        "True when an HMAC secret is configured; the secret itself is never returned.",
+      ),
+    enabled: zod.boolean(),
+    eventFilter: zod
+      .enum(["all", "critical", "high_and_critical"])
+      .describe(
+        "Controls which violation severities trigger a delivery. all = any violation, critical = critical severity only, high_and_critical = high or critical severity.\n",
+      ),
+    emailAlerts: zod
+      .boolean()
+      .describe(
+        "When true (and SMTP is configured server-side), the user receives an email for critical-severity violations.\n",
+      ),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .describe(
+    "A user-configured webhook delivery target for policy violation alerts. Secrets are never returned in responses; hasSecret indicates whether one is configured.\n",
+  );
+
+/**
+ * Deletes the webhook endpoint and all associated delivery records. This action is irreversible.
+
+ * @summary Delete a webhook endpoint
+ */
+export const DeleteWebhookParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * Sends a synthetic policy.violation payload to the endpoint URL and returns the HTTP response code. Does not create a delivery record. Useful for verifying that the endpoint is reachable and correctly configured.
+
+ * @summary Send a test webhook
+ */
+export const TestWebhookParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const TestWebhookResponse = zod
+  .object({
+    ok: zod.boolean().describe("True when the endpoint returned a 2xx status."),
+    statusCode: zod
+      .number()
+      .nullish()
+      .describe(
+        "HTTP response code from the endpoint; null if the request failed entirely.",
+      ),
+    error: zod
+      .string()
+      .nullish()
+      .describe(
+        "Error message if the request failed (timeout, DNS error, etc.).",
+      ),
+  })
+  .describe("Result of a test webhook delivery attempt.");
+
+/**
+ * Returns the 50 most recent delivery records for the given endpoint, ordered newest-first. Each record shows status, attempt count, last HTTP response code, and timestamps.
+
+ * @summary List recent deliveries for a webhook endpoint
+ */
+export const ListWebhookDeliveriesParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ListWebhookDeliveriesResponse = zod.object({
+  items: zod.array(
+    zod
+      .object({
+        id: zod.string(),
+        webhookEndpointId: zod.string(),
+        receiptId: zod.string(),
+        status: zod.enum(["pending", "delivered", "failed"]),
+        attempts: zod
+          .number()
+          .describe("Number of delivery attempts made so far."),
+        lastAttemptAt: zod.coerce.date().nullish(),
+        responseCode: zod
+          .number()
+          .nullish()
+          .describe("Last HTTP response code from the endpoint."),
+        createdAt: zod.coerce.date(),
+      })
+      .describe("A single webhook delivery attempt record."),
+  ),
+});

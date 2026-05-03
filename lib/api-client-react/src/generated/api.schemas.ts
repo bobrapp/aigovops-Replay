@@ -384,6 +384,136 @@ export interface ChainSummary {
 }
 
 /**
+ * Controls which violation severities trigger a delivery. all = any violation, critical = critical severity only, high_and_critical = high or critical severity.
+
+ */
+export type WebhookEndpointEventFilter =
+  (typeof WebhookEndpointEventFilter)[keyof typeof WebhookEndpointEventFilter];
+
+export const WebhookEndpointEventFilter = {
+  all: "all",
+  critical: "critical",
+  high_and_critical: "high_and_critical",
+} as const;
+
+/**
+ * A user-configured webhook delivery target for policy violation alerts. Secrets are never returned in responses; hasSecret indicates whether one is configured.
+
+ */
+export interface WebhookEndpoint {
+  id: string;
+  url: string;
+  /** True when an HMAC secret is configured; the secret itself is never returned. */
+  hasSecret: boolean;
+  enabled: boolean;
+  /** Controls which violation severities trigger a delivery. all = any violation, critical = critical severity only, high_and_critical = high or critical severity.
+   */
+  eventFilter: WebhookEndpointEventFilter;
+  /** When true (and SMTP is configured server-side), the user receives an email for critical-severity violations.
+   */
+  emailAlerts: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebhookEndpointList {
+  items: WebhookEndpoint[];
+  total: number;
+}
+
+export type CreateWebhookBodyEventFilter =
+  (typeof CreateWebhookBodyEventFilter)[keyof typeof CreateWebhookBodyEventFilter];
+
+export const CreateWebhookBodyEventFilter = {
+  all: "all",
+  critical: "critical",
+  high_and_critical: "high_and_critical",
+} as const;
+
+export interface CreateWebhookBody {
+  /**
+   * HTTPS (or HTTP) URL to POST policy violation events to. Private IP ranges, loopback, and link-local addresses are rejected.
+
+   * @maxLength 2000
+   */
+  url: string;
+  /**
+   * Optional HMAC-SHA256 key. When set, every delivery includes an X-AIGovOps-Signature header with "sha256=<hex>" so your endpoint can verify authenticity.
+
+   * @maxLength 256
+   */
+  secret?: string;
+  eventFilter?: CreateWebhookBodyEventFilter;
+  /** Opt in to email alerts for critical-severity violations. Requires SMTP to be configured server-side.
+   */
+  emailAlerts?: boolean;
+}
+
+export type UpdateWebhookBodyEventFilter =
+  (typeof UpdateWebhookBodyEventFilter)[keyof typeof UpdateWebhookBodyEventFilter];
+
+export const UpdateWebhookBodyEventFilter = {
+  all: "all",
+  critical: "critical",
+  high_and_critical: "high_and_critical",
+} as const;
+
+export interface UpdateWebhookBody {
+  /** @maxLength 2000 */
+  url?: string;
+  /**
+   * Pass null to clear the existing HMAC secret.
+   * @maxLength 256
+   * @nullable
+   */
+  secret?: string | null;
+  enabled?: boolean;
+  eventFilter?: UpdateWebhookBodyEventFilter;
+  emailAlerts?: boolean;
+}
+
+/**
+ * Result of a test webhook delivery attempt.
+ */
+export interface WebhookTestResult {
+  /** True when the endpoint returned a 2xx status. */
+  ok: boolean;
+  /** HTTP response code from the endpoint; null if the request failed entirely. */
+  statusCode?: number | null;
+  /** Error message if the request failed (timeout, DNS error, etc.). */
+  error?: string | null;
+}
+
+export type WebhookDeliveryStatus =
+  (typeof WebhookDeliveryStatus)[keyof typeof WebhookDeliveryStatus];
+
+export const WebhookDeliveryStatus = {
+  pending: "pending",
+  delivered: "delivered",
+  failed: "failed",
+} as const;
+
+/**
+ * A single webhook delivery attempt record.
+ */
+export interface WebhookDelivery {
+  id: string;
+  webhookEndpointId: string;
+  receiptId: string;
+  status: WebhookDeliveryStatus;
+  /** Number of delivery attempts made so far. */
+  attempts: number;
+  lastAttemptAt?: string | null;
+  /** Last HTTP response code from the endpoint. */
+  responseCode?: number | null;
+  createdAt: string;
+}
+
+export interface WebhookDeliveryList {
+  items: WebhookDelivery[];
+}
+
+/**
  * Opaque session token — `Bearer <sid>`.
  */
 export type AuthorizationSessionHeaderParameter = string;

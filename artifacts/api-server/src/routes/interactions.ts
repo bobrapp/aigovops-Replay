@@ -72,6 +72,7 @@ import { hashPrompt, hashResponse, buildChainHash } from "../lib/crypto";
 import { generateId } from "../lib/id";
 import { evalPolicyRule } from "../lib/policy-eval";
 import { insertActivityLog } from "../lib/activity-log";
+import { enqueueWebhookDeliveries } from "../lib/webhook-worker";
 import { requireAuth } from "../middlewares/requireAuth";
 
 /**
@@ -294,6 +295,7 @@ router.post("/interactions", requireAuth, mintRateLimiter, async (req, res) => {
   }
 
   const violations: string[] = [];
+  const violatedPolicies: Array<{ id: string; name: string; severity: string }> = [];
   let policyEvalError = false;
   for (const policy of policies) {
     const { passed, error } = evalResults.get(policy.id)!;
@@ -310,6 +312,7 @@ router.post("/interactions", requireAuth, mintRateLimiter, async (req, res) => {
       // admin-only data (protected by requireAdminAuth on policy CRUD endpoints).
       // The severity label and policy name are sufficient for audit purposes.
       violations.push(`[${policy.severity.toUpperCase()}] ${policy.name}`);
+      violatedPolicies.push({ id: policy.id, name: policy.name, severity: policy.severity });
     }
   }
 
@@ -383,6 +386,14 @@ router.post("/interactions", requireAuth, mintRateLimiter, async (req, res) => {
     interactionId: id,
     summary: `Receipt minted: ${body.model} — ${body.prompt.slice(0, 60)}`,
   });
+
+  // Fire webhook deliveries for any policy violations — fire-and-forget.
+  // Errors are logged but never allowed to block or fail the mint response.
+  if (violatedPolicies.length > 0) {
+    enqueueWebhookDeliveries({ receiptId: id, userId: uid, violatedPolicies }).catch((err) => {
+      req.log.error({ err, receiptId: id }, "Failed to enqueue webhook deliveries");
+    });
+  }
 
   res.status(201).json(toInteractionDto(interaction));
 });

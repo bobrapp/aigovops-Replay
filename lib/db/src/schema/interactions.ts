@@ -148,3 +148,63 @@ export const shareTokensTable = pgTable("share_tokens", {
 });
 
 export type ShareToken = typeof shareTokensTable.$inferSelect;
+
+export const webhookEventFilterEnum = pgEnum("webhook_event_filter", [
+  "all",
+  "critical",
+  "high_and_critical",
+]);
+
+export const webhookDeliveryStatusEnum = pgEnum("webhook_delivery_status", [
+  "pending",
+  "delivered",
+  "failed",
+]);
+
+/**
+ * webhook_endpoints — user-configured delivery targets for policy violation alerts.
+ *
+ * Security notes:
+ *   - url is validated at request time against an SSRF blocklist (private ranges,
+ *     loopback, link-local). The stored value is re-checked at delivery time.
+ *   - secret is stored in plaintext as an HMAC key (not a password). It is used
+ *     to compute HMAC-SHA256(payload) sent in X-AIGovOps-Signature. The secret
+ *     is never included in list/detail responses; hasSecret:boolean is sent instead.
+ *   - enabled is stored as integer (0/1) for SQLite compatibility in tests.
+ *   - Max 10 endpoints per user enforced at the API layer.
+ */
+export const webhookEndpointsTable = pgTable("webhook_endpoints", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  url: text("url").notNull(),
+  secret: text("secret"),
+  enabled: integer("enabled").notNull().default(1),
+  eventFilter: webhookEventFilterEnum("event_filter").notNull().default("all"),
+  emailAlerts: integer("email_alerts").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export type WebhookEndpoint = typeof webhookEndpointsTable.$inferSelect;
+
+/**
+ * webhook_deliveries — per-delivery tracking for each webhook firing.
+ *
+ * One row is created per (enabled endpoint, receipt) when a receipt is minted
+ * with one or more policy violations matching the endpoint's eventFilter.
+ * The worker retries up to MAX_WEBHOOK_ATTEMPTS (3) with exponential backoff.
+ */
+export const webhookDeliveriesTable = pgTable("webhook_deliveries", {
+  id: text("id").primaryKey(),
+  webhookEndpointId: text("webhook_endpoint_id").notNull(),
+  receiptId: text("receipt_id").notNull(),
+  status: webhookDeliveryStatusEnum("status").notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  nextRetryAt: timestamp("next_retry_at"),
+  responseCode: integer("response_code"),
+  payload: text("payload").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type WebhookDelivery = typeof webhookDeliveriesTable.$inferSelect;

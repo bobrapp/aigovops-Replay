@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startWebhookWorker } from "./lib/webhook-worker";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,8 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Start in-process webhook delivery worker.
+  // Polls webhook_deliveries every WEBHOOK_POLL_INTERVAL_MS (default 5 s).
+  startWebhookWorker();
 });
