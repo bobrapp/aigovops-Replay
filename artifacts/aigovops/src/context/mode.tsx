@@ -8,7 +8,7 @@ interface ModeContextValue {
 }
 
 const ModeContext = createContext<ModeContextValue>({
-  mode: "expert",
+  mode: "simple",
   setMode: () => {},
 });
 
@@ -16,9 +16,9 @@ export function ModeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<Mode>(() => {
     try {
       const stored = localStorage.getItem("aigovops-mode");
-      return stored === "simple" ? "simple" : "expert";
+      return stored === "expert" ? "expert" : "simple";
     } catch {
-      return "expert";
+      return "simple";
     }
   });
 
