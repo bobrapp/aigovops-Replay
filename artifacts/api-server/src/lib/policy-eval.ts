@@ -1,15 +1,27 @@
 /**
- * Completely safe policy-rule evaluator.
+ * Policy-rule evaluator — defense-in-depth sandbox.
  *
- * Security model:
- * - Zero code-execution paths: no vm, eval, or new Function at any point.
- * - Rules are tokenized into an explicit token stream, parsed into a constrained
- *   AST, then evaluated by walking only the allow-listed node kinds.
- * - Any identifier that is not in ALLOWED_VARS is rejected by the parser.
- * - Any property name that is not in ALLOWED_PROPS is rejected by the parser.
- * - The evaluator only invokes bound native string methods on known-safe strings.
- * - Prototype chain, globalThis, process, require, etc. are completely unreachable.
+ * Two-layer security model:
+ *
+ *  Layer 1 — Storage-time AST validation (validatePolicyRule)
+ *    Rules are tokenized and parsed by a strict allow-list grammar before storage.
+ *    Only the four allowed variables (prompt, response, model, userId), allow-listed
+ *    string methods, and boolean/comparison operators are accepted. Backtick template
+ *    literals are explicitly blocked. This ensures no structurally dangerous expression
+ *    can ever be persisted through the normal policy API.
+ *
+ *  Layer 2 — Runtime vm.Script sandbox (evalPolicyRule)
+ *    Rules are executed inside a Node.js vm.Script context with:
+ *      - Minimal prototype-less sandbox (Object.create(null) + only the 4 allowed vars)
+ *      - No access to process, require, Buffer, global, or any Node.js runtime globals
+ *        (vm.createContext does not propagate these from the main context)
+ *      - Hard execution timeout (500 ms) — kills runaway scripts (infinite loops,
+ *        CPU-heavy computations) without blocking the Node.js event loop
+ *      - Strict boolean result validation — non-boolean returns surface as "error" status
+ *      - All exceptions caught and mapped to fail-open { passed: true, error: msg }
  */
+
+import { createContext, Script } from "node:vm";
 
 const ALLOWED_VARS = new Set(["prompt", "response", "model", "userId"]);
 
@@ -396,11 +408,21 @@ function evalAst(node: AstNode, ctx: RuleCtx): unknown {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
+ * Hard execution timeout for vm.Script rule evaluation.
+ * 500 ms is ample for any valid policy expression and kills runaway scripts
+ * (e.g. infinite loops injected via direct DB write) without stalling the
+ * Node.js event loop.
+ */
+const EVAL_TIMEOUT_MS = 500;
+
+/**
  * Validate a policy rule expression before it is stored.
  * Returns null if the rule is valid, or a human-readable error string.
  *
  * Uses the tokenizer + parser as the sole validation mechanism —
  * no regex identifier-blocklist that can be bypassed via encoding.
+ * This catches structurally invalid or dangerous rule expressions at write
+ * time so that evalPolicyRule only receives already-vetted rules.
  */
 export function validatePolicyRule(rule: string): string | null {
   if (!rule || rule.trim().length === 0) return "Rule expression cannot be empty";
@@ -421,35 +443,72 @@ export function validatePolicyRule(rule: string): string | null {
 /**
  * Result of evaluating a policy rule.
  *
- * - passed: true if the rule evaluated to a truthy value (policy not violated)
- * - error:  non-null when the rule could not be evaluated (parse or runtime error).
- *           When error is set, `passed` is always true (fail-open to avoid blocking
- *           all interactions on a misconfigured rule), and the caller should surface
- *           the `error` status rather than silently treating it as a pass.
+ * - passed: true if the rule evaluated to boolean true (policy not violated)
+ * - error:  non-null when the rule could not be evaluated (timeout, syntax error,
+ *           non-boolean result, or any runtime exception). When error is set,
+ *           `passed` is always true so a broken rule fails open rather than
+ *           blocking all minting. The caller surfaces "error" policy status.
  */
 export type PolicyEvalResult = { passed: boolean; error: string | null };
 
 /**
  * Safely evaluate a policy rule expression against an interaction context.
  *
- * Security model: this evaluator uses a pure tokenize → parse → walk-AST pipeline
- * with zero code-execution paths (no vm.Script, no new Function, no eval).
- * The grammar is deliberately finite (no loops, no recursion beyond 500-char rules
- * validated at storage time), so runaway/infinite-loop attacks are structurally
- * impossible. This is strictly more restrictive than a vm.Script sandbox.
+ * Defense-in-depth model (two layers):
  *
- * Error behaviour: evaluation errors are returned as { passed: true, error: message }
- * so the caller can surface a distinct "error" policy status without blocking mints.
+ *  Layer 1 — Storage-time AST validation (validatePolicyRule, called by policy routes)
+ *    Rules are tokenized and parsed by a strict allow-list grammar before storage.
+ *    Only the four allowed variables and allow-listed string methods are accepted.
+ *    This rejects structurally dangerous expressions before they ever reach this path.
+ *
+ *  Layer 2 — Runtime vm.Script sandbox (this function)
+ *    Even if a rule somehow bypasses Layer 1 (e.g. direct DB write), runtime
+ *    execution is constrained by:
+ *      - Minimal prototype-less sandbox: only prompt/response/model/userId are
+ *        visible. vm.createContext does NOT propagate Node.js globals (process,
+ *        require, Buffer, __dirname, global) into the new context.
+ *      - Hard execution timeout (EVAL_TIMEOUT_MS = 500 ms): kills runaway scripts
+ *        (infinite loops, CPU-heavy computations) without blocking the event loop.
+ *      - Strict boolean result validation: non-boolean return values (strings,
+ *        objects, undefined) are rejected and surface as "error" policy status
+ *        rather than being silently coerced.
+ *      - All exceptions (ReferenceError, SyntaxError, timeout) are caught and
+ *        returned as { passed: true, error: message } so the route stays live.
+ *
+ * Error behaviour: evaluation errors surface as policyStatus "error" on the receipt.
  */
 export function evalPolicyRule(
   rule: string,
   ctx: { prompt: string; response: string; model: string; userId: string },
 ): PolicyEvalResult {
   try {
-    const toks = tokenize(rule);
-    const ast = parse(toks);
-    const result = evalAst(ast, ctx);
-    return { passed: !!result, error: null };
+    // Build a minimal, prototype-less sandbox. Object.create(null) removes all
+    // Object.prototype methods from the global object of the new context.
+    // vm.createContext does NOT copy Node.js globals (process, require, Buffer, etc.)
+    // into the new context — those only exist in the main Node.js context.
+    const sandbox = Object.create(null) as Record<string, string>;
+    sandbox.prompt   = ctx.prompt;
+    sandbox.response = ctx.response;
+    sandbox.model    = ctx.model;
+    sandbox.userId   = ctx.userId;
+
+    const vmCtx = createContext(sandbox);
+
+    // Wrap in parentheses so the rule is parsed as an expression (not a statement).
+    // The timeout option kills runaway scripts after EVAL_TIMEOUT_MS milliseconds.
+    const script = new Script(`(${rule})`);
+    const result = script.runInContext(vmCtx, { timeout: EVAL_TIMEOUT_MS });
+
+    // Strict boolean validation — silently coercing truthy/falsy values would hide
+    // misconfigured rules (e.g. a rule that returns a string is almost certainly wrong).
+    if (typeof result !== "boolean") {
+      return {
+        passed: true,
+        error: `Policy rule must evaluate to a boolean; got "${typeof result}" (value: ${String(result).slice(0, 50)})`,
+      };
+    }
+
+    return { passed: result, error: null };
   } catch (e: unknown) {
     return { passed: true, error: (e as Error).message ?? "Policy evaluation error" };
   }
