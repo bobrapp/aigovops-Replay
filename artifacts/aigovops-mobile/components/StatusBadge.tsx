@@ -2,7 +2,7 @@ import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
 
-type PolicyStatus = "pass" | "fail" | "pending";
+type PolicyStatus = "pass" | "fail" | "pending" | "error";
 
 interface StatusBadgeProps {
   status: PolicyStatus;
@@ -16,9 +16,10 @@ export function StatusBadge({ status, size = "md" }: StatusBadgeProps) {
     pass: { bg: "rgba(16,185,129,0.15)", text: colors.emerald, label: "PASS" },
     fail: { bg: "rgba(239,68,68,0.15)", text: colors.error, label: "FAIL" },
     pending: { bg: "rgba(245,158,11,0.15)", text: colors.warning, label: "PENDING" },
+    error: { bg: "rgba(139,92,246,0.15)", text: colors.mutedForeground, label: "ERROR" },
   };
 
-  const c = config[status];
+  const c = config[status] ?? config.error;
   const isSmall = size === "sm";
 
   return (

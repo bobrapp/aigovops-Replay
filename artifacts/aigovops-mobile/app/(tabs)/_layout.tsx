@@ -19,6 +19,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "checkmark.shield", selected: "checkmark.shield.fill" }} />
         <Label>Verify</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="chain">
+        <Icon sf={{ default: "link", selected: "link" }} />
+        <Label>Chain</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="stats">
         <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
         <Label>Dashboard</Label>
@@ -85,6 +89,18 @@ function ClassicTabLayout() {
               <SymbolView name="checkmark.shield" tintColor={color} size={24} />
             ) : (
               <Feather name="shield" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="chain"
+        options={{
+          title: "Chain",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="link" tintColor={color} size={24} />
+            ) : (
+              <Feather name="link" size={22} color={color} />
             ),
         }}
       />

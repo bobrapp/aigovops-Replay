@@ -10,7 +10,7 @@ interface Receipt {
   id: string;
   model: string;
   prompt: string;
-  policyStatus: "pass" | "fail" | "pending";
+  policyStatus: "pass" | "fail" | "pending" | "error";
   createdAt: string;
   chainHash: string;
 }
