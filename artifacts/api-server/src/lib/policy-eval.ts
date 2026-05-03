@@ -477,30 +477,59 @@ export type PolicyEvalResult = { passed: boolean; error: string | null };
  *
  * Error behaviour: evaluation errors surface as policyStatus "error" on the receipt.
  */
+const DANGEROUS_GLOBALS = [
+  "Function",
+  "eval",
+  "globalThis",
+  "Generator",
+  "AsyncFunction",
+  "AsyncGenerator",
+] as const;
+
+const CLEANUP_SCRIPT = new Script(
+  DANGEROUS_GLOBALS.map((g) => `${g} = undefined;`).join(" "),
+);
+
 export function evalPolicyRule(
   rule: string,
   ctx: { prompt: string; response: string; model: string; userId: string },
 ): PolicyEvalResult {
   try {
-    // Build a minimal, prototype-less sandbox. Object.create(null) removes all
-    // Object.prototype methods from the global object of the new context.
-    // vm.createContext does NOT copy Node.js globals (process, require, Buffer, etc.)
-    // into the new context — those only exist in the main Node.js context.
-    const sandbox = Object.create(null) as Record<string, string>;
+    // Step 1 — Build a minimal, prototype-less sandbox.
+    // Object.create(null) removes all Object.prototype methods from the object
+    // that will become the vm context's global object.
+    // vm.createContext does NOT propagate Node.js-specific globals (process,
+    // require, Buffer, __dirname, global) into the new context.
+    const sandbox = Object.create(null) as Record<string, unknown>;
     sandbox.prompt   = ctx.prompt;
     sandbox.response = ctx.response;
     sandbox.model    = ctx.model;
     sandbox.userId   = ctx.userId;
 
+    // Step 2 — Contextualize. vm.createContext adds ECMAScript built-ins
+    // (Object, Array, String, Function, eval, globalThis, etc.) to the sandbox.
     const vmCtx = createContext(sandbox);
 
-    // Wrap in parentheses so the rule is parsed as an expression (not a statement).
-    // The timeout option kills runaway scripts after EVAL_TIMEOUT_MS milliseconds.
+    // Step 3 — Shadow dangerous built-ins with undefined.
+    // Even though our rules cannot contain Function() or eval (Layer 1 rejects
+    // them), we null them out as a defence against direct-DB injection and to
+    // fully meet the "minimal context" guarantee.
+    CLEANUP_SCRIPT.runInContext(vmCtx, { timeout: 50 });
+
+    // Step 4 — Freeze the context object.
+    // Prevents any script running in this context from re-introducing globals
+    // or mutating the allowed variable values after cleanup.
+    Object.freeze(vmCtx);
+
+    // Step 5 — Compile and run the policy rule.
+    // Wrap in parentheses so the rule is parsed as an expression (not a block).
+    // The timeout kills runaway scripts (e.g. infinite loops) without blocking
+    // the Node.js event loop.
     const script = new Script(`(${rule})`);
     const result = script.runInContext(vmCtx, { timeout: EVAL_TIMEOUT_MS });
 
-    // Strict boolean validation — silently coercing truthy/falsy values would hide
-    // misconfigured rules (e.g. a rule that returns a string is almost certainly wrong).
+    // Step 6 — Strict boolean validation.
+    // Silently coercing truthy/falsy values would mask misconfigured rules.
     if (typeof result !== "boolean") {
       return {
         passed: true,
