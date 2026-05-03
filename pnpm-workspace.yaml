@@ -162,6 +162,10 @@ overrides:
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
   # Security vulnerability fixes
+  # uuid@3.4.0 (via @expo/ngrok) and uuid@7.0.3 (via xcode>@expo/config-plugins)
+  # are vulnerable to GHSA-w5hq-g745-h8pq (missing buffer bounds check).
+  # Patched in uuid>=14.0.0.
+  "uuid": "^14.0.0"
   "picomatch@2": "^2.3.2"
   "picomatch@4": "^4.0.4"
   "path-to-regexp": "^8.4.2"
