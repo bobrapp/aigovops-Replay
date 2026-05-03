@@ -170,8 +170,10 @@ function sameOriginGuard(req: Request, res: Response, next: NextFunction): void 
  *  crossOriginEmbedderPolicy / crossOriginOpenerPolicy / crossOriginResourcePolicy
  *                         — disabled; irrelevant for a JSON-only API origin
  *
- *  Permissions-Policy is set manually because helmet does not include it by
- *  default and we want an explicit deny-all for sensitive browser features.
+ *  Permissions-Policy is set in a follow-up middleware because helmet v8 has
+ *  no built-in permissionsPolicy option — there is no helmet config knob that
+ *  emits this header. A thin res.setHeader() call immediately after helmet()
+ *  is the canonical approach and is functionally equivalent to a single call.
  */
 app.use(
   helmet({

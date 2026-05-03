@@ -236,25 +236,36 @@ router.post("/interactions", requireAuth, mintRateLimiter, async (req, res) => {
   const uid = userId(req);
 
   // Evaluate policies before the locked transaction (read-only, no chain state needed).
-  // Safety: evalPolicyRule uses a tokenizer + AST evaluator with zero code-execution
-  // paths — new Function has been completely removed. Only the four allowed variables
-  // (prompt, response, model, userId) and allow-listed string methods are reachable.
-  // Rules were validated by validatePolicyRule() at storage time (POST/PATCH policies)
-  // so mal-formed expressions are rejected before they ever reach this path.
+  // Safety: evalPolicyRule executes rules in a vm.Script sandbox with a prototype-less
+  // frozen context, dangerous built-ins (Function/eval/globalThis) nulled out, and a
+  // hard 500ms timeout. Node.js globals (process, require) are not propagated into the
+  // vm context. Rules were validated by validatePolicyRule() at storage time so
+  // structurally dangerous expressions are rejected before they ever reach this path.
   const policies = await db
     .select()
     .from(policiesTable)
     .where(eq(policiesTable.enabled, 1));
 
+  // Run each policy rule exactly once and cache results keyed by policy.id.
+  // The same map is reused below for violation-count increments so we never
+  // run evalPolicyRule twice per mint (avoids double CPU cost + divergence risk).
+  const evalResults = new Map<string, { passed: boolean; error: string | null }>();
+  for (const policy of policies) {
+    evalResults.set(
+      policy.id,
+      evalPolicyRule(policy.rule, {
+        prompt: body.prompt,
+        response: body.response,
+        model: body.model,
+        userId: uid,
+      }),
+    );
+  }
+
   const violations: string[] = [];
   let policyEvalError = false;
   for (const policy of policies) {
-    const { passed, error } = evalPolicyRule(policy.rule, {
-      prompt: body.prompt,
-      response: body.response,
-      model: body.model,
-      userId: uid,
-    });
+    const { passed, error } = evalResults.get(policy.id)!;
     if (error) {
       // Rule evaluation failed — surface as "error" status rather than silently
       // treating as a pass. The route continues (fail-open) so one broken policy
@@ -322,16 +333,12 @@ router.post("/interactions", requireAuth, mintRateLimiter, async (req, res) => {
     return inserted;
   });
 
-  // Update violation counts outside the lock window.
-  // Skip count update if evaluation errored — avoid incrementing counts on
-  // broken rules (the "error" status was already recorded on the receipt).
+  // Update violation counts outside the lock window using cached eval results.
+  // Reuses evalResults from the single evaluation pass above — no second vm.Script
+  // execution per policy. Skip count update if evaluation errored to avoid
+  // incrementing counts on broken rules (the "error" status is already on the receipt).
   for (const policy of policies) {
-    const { passed, error } = evalPolicyRule(policy.rule, {
-      prompt: body.prompt,
-      response: body.response,
-      model: body.model,
-      userId: uid,
-    });
+    const { passed, error } = evalResults.get(policy.id)!;
     if (!error && !passed) {
       await db
         .update(policiesTable)
