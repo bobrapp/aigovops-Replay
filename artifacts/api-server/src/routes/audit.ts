@@ -3,18 +3,22 @@
  *
  * GET /audit/chain-status
  *   Walks every activity_log row that has a logHash (post-migration rows) in
- *   strict deterministic order (created_at ASC, id ASC) and re-derives each
- *   entry's expected logHash from its stored fields + the expected prevLogHash
- *   accumulated from the chain walk. Any mismatch — tampered data field,
- *   deleted row, reordered entry, or modified hash — increments the tampered
- *   counter.
+ *   strict deterministic order (created_at ASC, id ASC) and validates each
+ *   entry in two ways:
+ *
+ *   1. Link check: row.prevLogHash must equal the expectedPrev accumulated
+ *      from the walk (NULL for the genesis entry). A mismatch means a row was
+ *      inserted out of order, or its prevLogHash column was tampered.
+ *
+ *   2. Hash check: the logHash is re-derived from the row's own stored fields
+ *      (type, interactionId, summary, createdAt) plus the expected prevLogHash
+ *      from the walk. Any field-level tampering or hash substitution is caught.
+ *
+ *   Either failure increments the tampered counter.
  *
  *   Ordering: ORDER BY created_at ASC, id ASC matches the predecessor lookup
- *   in insertActivityLog (ORDER BY … DESC), so the "last row" at insert time
- *   is always the "first row not yet seen" at verification time — making the
- *   walk deterministic even when two rows share the same millisecond-precision
- *   timestamp (which cannot happen under the advisory lock, but is safe if
- *   legacy rows have equal timestamps).
+ *   in insertActivityLog (ORDER BY … DESC) making the walk deterministic even
+ *   if two rows share the same millisecond-precision timestamp.
  *
  *   Pre-migration rows with NULL logHash are counted in `total` but skipped in
  *   `hashableEntries` and chain verification (backward compatibility).
@@ -53,6 +57,14 @@ router.get("/audit/chain-status", requireAdminAuth, async (_req, res) => {
   let headHash: string | null = null;
 
   for (const row of hashableRows) {
+    // Check 1: the stored prevLogHash must match the expected predecessor from
+    // the chain walk. Detects out-of-order insertion or prevLogHash tampering.
+    const prevLinkOk = row.prevLogHash === expectedPrev;
+
+    // Check 2: re-derive the logHash from the row's own stored fields using
+    // expectedPrev (the authoritative predecessor from the walk, not the
+    // potentially-tampered stored prevLogHash). Detects field-level tampering
+    // or hash substitution.
     const expectedHash = buildLogHash({
       type: row.type,
       interactionId: row.interactionId,
@@ -60,8 +72,9 @@ router.get("/audit/chain-status", requireAdminAuth, async (_req, res) => {
       createdAt: row.createdAt,
       prevLogHash: expectedPrev,
     });
+    const hashOk = row.logHash === expectedHash;
 
-    if (row.logHash !== expectedHash) {
+    if (!prevLinkOk || !hashOk) {
       tampered++;
     }
 
