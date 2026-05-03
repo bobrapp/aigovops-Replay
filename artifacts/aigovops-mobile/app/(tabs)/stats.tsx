@@ -72,6 +72,36 @@ export default function StatsScreen() {
         AI interaction governance overview
       </Text>
 
+      {/* Tutorial CTA */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.tutorialCard,
+          {
+            backgroundColor: pressed ? "rgba(16,185,129,0.08)" : "rgba(16,185,129,0.05)",
+            borderColor: "rgba(16,185,129,0.25)",
+          },
+        ]}
+        onPress={() => {}}
+      >
+        <View style={styles.tutorialRow}>
+          <View style={[styles.tutorialIcon, { backgroundColor: "rgba(16,185,129,0.15)" }]}>
+            <Ionicons name="book-outline" size={20} color={colors.emerald} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={styles.tutorialTitleRow}>
+              <Text style={[styles.tutorialTitle, { color: colors.foreground }]}>How It Works</Text>
+              <View style={[styles.startBadge, { backgroundColor: colors.emerald }]}>
+                <Text style={styles.startBadgeText}>START HERE</Text>
+              </View>
+            </View>
+            <Text style={[styles.tutorialSub, { color: colors.mutedForeground }]}>
+              Paste → mint → verify → replay
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.emerald} />
+        </View>
+      </Pressable>
+
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} size="large" />

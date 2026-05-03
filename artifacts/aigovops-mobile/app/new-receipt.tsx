@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useAuth } from "@/context/AuthContext";
 
 const MODELS = ["gpt-4o", "gpt-4", "claude-3-5-sonnet", "claude-3-opus", "gemini-1.5-pro", "llama-3.1"];
 
@@ -22,23 +23,28 @@ export default function NewReceiptScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { login } = useAuth();
   const topInset = insets.top + (Platform.OS === "web" ? 67 : 0);
 
   const [prompt, setPrompt] = useState("");
   const [response, setResponse] = useState("");
   const [model, setModel] = useState(MODELS[0]);
+  const [saveError, setSaveError] = useState<"auth" | "generic" | null>(null);
 
   const { mutateAsync, isPending } = useCreateInteraction();
 
   async function handleSubmit() {
     if (!prompt.trim() || !response.trim()) return;
+    setSaveError(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await mutateAsync({ data: { prompt: prompt.trim(), response: response.trim(), model } });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
-    } catch {
+    } catch (err: unknown) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      const status = (err as { status?: number })?.status;
+      setSaveError(status === 401 ? "auth" : "generic");
     }
   }
 
@@ -119,6 +125,33 @@ export default function NewReceiptScreen() {
             Your receipt will be cryptographically signed and added to the immutable chain.
           </Text>
         </View>
+
+        {saveError === "auth" && (
+          <View style={[styles.errorBox, { backgroundColor: "rgba(245,158,11,0.08)", borderColor: "rgba(245,158,11,0.3)" }]}>
+            <Ionicons name="lock-closed-outline" size={18} color="#d97706" />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.errorTitle, { color: "#92400e" }]}>Session expired</Text>
+              <Text style={[styles.errorSub, { color: "#b45309" }]}>
+                Please sign in again to save receipts.
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.errorBtn, { backgroundColor: "#d97706" }]}
+              onPress={login}
+            >
+              <Text style={styles.errorBtnText}>Sign In</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {saveError === "generic" && (
+          <View style={[styles.errorBox, { backgroundColor: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.25)" }]}>
+            <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
+            <Text style={[styles.errorTitle, { color: colors.error, flex: 1 }]}>
+              Failed to save — please try again.
+            </Text>
+          </View>
+        )}
       </ScrollView>
     </View>
   );

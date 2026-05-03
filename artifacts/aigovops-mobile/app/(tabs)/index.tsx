@@ -106,6 +106,22 @@ export default function FeedScreen() {
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
                 {search ? "No matches found" : "No receipts yet"}
               </Text>
+              {!search && (
+                <>
+                  <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>
+                    Tap{" "}
+                    <Text style={{ fontFamily: "Inter_600SemiBold", color: colors.foreground }}>+</Text>
+                    {" "}to mint your first cryptographically signed receipt.
+                  </Text>
+                  <Pressable
+                    style={[styles.emptyAction, { backgroundColor: colors.primary }]}
+                    onPress={() => router.push("/new-receipt" as any)}
+                  >
+                    <Ionicons name="add" size={18} color="#fff" />
+                    <Text style={styles.emptyActionText}>New Receipt</Text>
+                  </Pressable>
+                </>
+              )}
             </View>
           }
         />

@@ -93,6 +93,15 @@ export default function VerifyScreen() {
           )}
         </Pressable>
 
+        <View style={[styles.hintBox, { backgroundColor: "rgba(27,59,111,0.06)", borderColor: "rgba(27,59,111,0.15)" }]}>
+          <Ionicons name="information-circle-outline" size={15} color={colors.navy} />
+          <Text style={[styles.hintText, { color: colors.mutedForeground }]}>
+            Find receipt IDs by tapping any receipt in the{" "}
+            <Text style={{ fontFamily: "Inter_600SemiBold", color: colors.foreground }}>Receipts</Text>
+            {" "}tab. The ID appears at the top of each receipt's detail view.
+          </Text>
+        </View>
+
         {error && (
           <View style={[styles.resultCard, { backgroundColor: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.2)" }]}>
             <Ionicons name="alert-circle" size={24} color={colors.error} />
