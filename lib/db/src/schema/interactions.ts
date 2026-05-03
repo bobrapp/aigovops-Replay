@@ -88,7 +88,7 @@ export const activityLogTable = pgTable("activity_log", {
    * on the prevLogHash lookup (see lib/activity-log.ts).
    */
   prevLogHash: text("prev_log_hash"),
-  logHash: text("log_hash"),
+  logHash: text("log_hash").notNull(),
 });
 
 export type ActivityLog = typeof activityLogTable.$inferSelect;
