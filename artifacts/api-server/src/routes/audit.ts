@@ -3,22 +3,23 @@
  *
  * GET /audit/chain-status
  *   Walks every activity_log row that has a logHash (post-migration rows) in
- *   strict deterministic order (created_at ASC, id ASC) and validates each
- *   entry in two ways:
+ *   strict monotonic order (seq ASC — BIGSERIAL, assigned under the advisory
+ *   lock at insert time) and validates each entry in two ways:
  *
- *   1. Link check: row.prevLogHash must equal the expectedPrev accumulated
- *      from the walk (NULL for the genesis entry). A mismatch means a row was
- *      inserted out of order, or its prevLogHash column was tampered.
+ *   1. Link check: row.prevLogHash must equal the expectedPrev accumulated from
+ *      the walk (NULL for the genesis entry). Detects out-of-order insertion or
+ *      prevLogHash column tampering.
  *
  *   2. Hash check: the logHash is re-derived from the row's own stored fields
- *      (type, interactionId, summary, createdAt) plus the expected prevLogHash
- *      from the walk. Any field-level tampering or hash substitution is caught.
+ *      (type, interactionId, summary, createdAt) plus expectedPrev from the
+ *      walk. Detects field-level tampering or hash substitution.
  *
  *   Either failure increments the tampered counter.
  *
- *   Ordering: ORDER BY created_at ASC, id ASC matches the predecessor lookup
- *   in insertActivityLog (ORDER BY … DESC) making the walk deterministic even
- *   if two rows share the same millisecond-precision timestamp.
+ *   Ordering by seq (not created_at + id) ensures the walk is deterministic
+ *   even when two rows share the same microsecond-precision timestamp. seq is a
+ *   BIGSERIAL that PG assigns inside the same advisory-locked transaction as the
+ *   insert, so seq order == insertion order, always.
  *
  *   Pre-migration rows with NULL logHash are counted in `total` but skipped in
  *   `hashableEntries` and chain verification (backward compatibility).
@@ -44,9 +45,10 @@ router.get("/audit/chain-status", requireAdminAuth, async (_req, res) => {
       .select()
       .from(activityLogTable)
       .where(isNotNull(activityLogTable.logHash))
-      // Deterministic ordering: created_at primary, id as tie-breaker.
-      // Matches the DESC version used in insertActivityLog's predecessor lookup.
-      .orderBy(asc(activityLogTable.createdAt), asc(activityLogTable.id)),
+      // seq ASC: monotonic insertion order, consistent with seq DESC in
+      // insertActivityLog's predecessor lookup. Deterministic even under
+      // timestamp ties.
+      .orderBy(asc(activityLogTable.seq)),
   ]);
 
   const total = allRows.length;
@@ -57,14 +59,11 @@ router.get("/audit/chain-status", requireAdminAuth, async (_req, res) => {
   let headHash: string | null = null;
 
   for (const row of hashableRows) {
-    // Check 1: the stored prevLogHash must match the expected predecessor from
-    // the chain walk. Detects out-of-order insertion or prevLogHash tampering.
+    // Check 1: stored prevLogHash must match expected predecessor from walk.
     const prevLinkOk = row.prevLogHash === expectedPrev;
 
-    // Check 2: re-derive the logHash from the row's own stored fields using
-    // expectedPrev (the authoritative predecessor from the walk, not the
-    // potentially-tampered stored prevLogHash). Detects field-level tampering
-    // or hash substitution.
+    // Check 2: re-derive logHash from stored fields + expectedPrev (not stored
+    // prevLogHash, which may be tampered). Catches any field-level modification.
     const expectedHash = buildLogHash({
       type: row.type,
       interactionId: row.interactionId,

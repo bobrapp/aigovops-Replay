@@ -20,7 +20,10 @@ CREATE TABLE IF NOT EXISTS "activity_log" (
         "type" "activity_type" NOT NULL,
         "interaction_id" text NOT NULL,
         "summary" text NOT NULL,
-        "created_at" timestamp DEFAULT now() NOT NULL
+        "created_at" timestamp DEFAULT now() NOT NULL,
+        "seq" bigserial,
+        "prev_log_hash" text,
+        "log_hash" text
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "interactions" (

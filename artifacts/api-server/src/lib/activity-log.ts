@@ -13,18 +13,24 @@
  *   Solution: acquire pg_advisory_xact_lock inside a transaction before reading
  *   the latest logHash. The lock is automatically released at the end of the
  *   transaction, so the critical window is exactly:
- *     lock → read-prevLogHash → insert (with DB-generated timestamp) → derive-logHash → update
+ *     lock → read-prev (by seq DESC) → insert → RETURNING createdAt+seq → hash → update
  *
- * Timestamp ordering guarantee:
- *   createdAt is NOT pre-computed in JS before lock acquisition. Instead:
- *     1. The row is inserted with DEFAULT (now()) so PostgreSQL assigns the
- *        created_at under the same serialization lock.
- *     2. The INSERT … RETURNING clause gives us back the DB-assigned timestamp.
- *     3. We derive logHash from that returned timestamp and UPDATE the row.
- *   This ensures that: (a) the hashed timestamp always matches the stored
- *   timestamp, and (b) the insertion order (lock order) matches the
- *   created_at order, so ORDER BY created_at, id produces a deterministic
- *   chain walk consistent with insertion order.
+ * Monotonic ordering via seq (BIGSERIAL):
+ *   created_at is microsecond-precision but two rows acquired under the same
+ *   lock can still share the same timestamp if the OS clock does not advance
+ *   between them. To guarantee a deterministic, non-ambiguous chain order,
+ *   activity_log has a BIGSERIAL `seq` column. PostgreSQL assigns seq inside
+ *   the same advisory-locked transaction as the insert, so seq order is always
+ *   consistent with insertion order regardless of timestamp ties.
+ *
+ *   Both the predecessor lookup (ORDER BY seq DESC) and the verification walk
+ *   (ORDER BY seq ASC) use seq as the sole ordering key.
+ *
+ * Timestamp guarantee:
+ *   The row is inserted with DEFAULT now() so PostgreSQL assigns created_at.
+ *   INSERT … RETURNING gives us back both createdAt and seq. logHash is then
+ *   derived from the DB-returned createdAt so the hashed and stored timestamps
+ *   are always identical.
  *
  * Backward compatibility:
  *   Pre-migration rows with NULL logHash are not affected. The chain walk in
@@ -59,21 +65,21 @@ export async function insertActivityLog(params: {
       // lookup, the INSERT, and the logHash derivation are one atomic unit.
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${AUDIT_LOG_LOCK_KEY})`);
 
-      // Read the predecessor's logHash using deterministic ordering.
-      // ORDER BY created_at ASC, id ASC matches the verification walk so that
-      // "latest" here and "last seen during verification" are always the same row.
+      // Read the predecessor using seq — the only fully deterministic order.
+      // seq is a BIGSERIAL assigned by PG under the same lock, so DESC seq
+      // always gives the most recently inserted hashed row.
       const [latest] = await tx
         .select({ logHash: activityLogTable.logHash })
         .from(activityLogTable)
         .where(isNotNull(activityLogTable.logHash))
-        .orderBy(desc(activityLogTable.createdAt), desc(activityLogTable.id))
+        .orderBy(desc(activityLogTable.seq))
         .limit(1);
 
       const prevLogHash = latest?.logHash ?? null;
 
-      // Insert the row first and let PostgreSQL assign created_at (DEFAULT now()).
-      // The RETURNING clause gives us the DB-assigned timestamp so our logHash
-      // is derived from the value that will actually be stored.
+      // Insert with logHash=null (placeholder); let PG assign created_at + seq.
+      // RETURNING gives us the DB-assigned values so our hash is derived from
+      // the values that will actually be stored.
       const [inserted] = await tx
         .insert(activityLogTable)
         .values({

@@ -1,4 +1,4 @@
-import { pgTable, text, integer, timestamp, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, bigserial, timestamp, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -72,6 +72,19 @@ export const activityLogTable = pgTable("activity_log", {
   interactionId: text("interaction_id").notNull(),
   summary: text("summary").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  /**
+   * seq: monotonic BIGSERIAL insertion-order counter.
+   * Assigned by PostgreSQL under the advisory lock (pg_advisory_xact_lock
+   * 0x4C4F4748) so seq order == insertion order, always.
+   * Used as the sole chain-ordering key in both insertActivityLog
+   * (ORDER BY seq DESC for predecessor lookup) and GET /audit/chain-status
+   * (ORDER BY seq ASC for verification walk). This eliminates any ambiguity
+   * from created_at timestamp ties.
+   * Pre-migration rows get seq values auto-filled by the sequence; they are
+   * skipped during hash verification (logHash IS NULL) so their seq ordering
+   * relative to post-migration rows does not affect chain correctness.
+   */
+  seq: bigserial("seq", { mode: "bigint" }),
   /**
    * logHash integrity chain — makes the audit log tamper-evident.
    *
