@@ -224,7 +224,12 @@ router.post("/interactions", requireAuth, async (req, res) => {
       userId: uid,
     });
     if (!passed) {
-      violations.push(`[${policy.severity.toUpperCase()}] ${policy.name}: ${policy.rule}`);
+      // Intentionally omit policy.rule from the violation string.
+      // Exposing the rule expression would let users reverse-engineer governance
+      // logic and craft prompts to evade future policy checks. Policy rules are
+      // admin-only data (protected by requireAdminAuth on policy CRUD endpoints).
+      // The severity label and policy name are sufficient for audit purposes.
+      violations.push(`[${policy.severity.toUpperCase()}] ${policy.name}`);
     }
   }
 

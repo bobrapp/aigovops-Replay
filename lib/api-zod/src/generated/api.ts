@@ -145,7 +145,11 @@ export const ListInteractionsResponse = zod.object({
       prevHash: zod.string().nullish(),
       chainHash: zod.string(),
       policyStatus: zod.enum(["pass", "fail", "pending"]),
-      policyViolations: zod.array(zod.string()),
+      policyViolations: zod
+        .array(zod.string())
+        .describe(
+          'List of policy violations triggered by this receipt. Each entry contains the severity label and policy name only (e.g. \"[HIGH] No PII in prompts\"). The rule expression is intentionally omitted to prevent users from reverse-engineering governance logic and evading future policy checks. Full rule details are available to administrators via the policy management endpoints.\n',
+        ),
       createdAt: zod.coerce.date(),
       replayCount: zod.number(),
     }),
@@ -218,7 +222,11 @@ export const GetInteractionResponse = zod.object({
   prevHash: zod.string().nullish(),
   chainHash: zod.string(),
   policyStatus: zod.enum(["pass", "fail", "pending"]),
-  policyViolations: zod.array(zod.string()),
+  policyViolations: zod
+    .array(zod.string())
+    .describe(
+      'List of policy violations triggered by this receipt. Each entry contains the severity label and policy name only (e.g. \"[HIGH] No PII in prompts\"). The rule expression is intentionally omitted to prevent users from reverse-engineering governance logic and evading future policy checks. Full rule details are available to administrators via the policy management endpoints.\n',
+    ),
   createdAt: zod.coerce.date(),
   replayCount: zod.number(),
 });
