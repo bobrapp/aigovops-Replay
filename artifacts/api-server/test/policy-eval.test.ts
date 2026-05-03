@@ -1,19 +1,23 @@
 /**
  * Regression test for policy-eval sandbox hardening (Task #25 — Security Batch 2).
  *
- * Demonstrates that evalPolicyRule:
- *   1. Evaluates valid rules correctly against the 4 allowed context variables
- *   2. Terminates infinite-loop rules within the 500 ms vm.Script timeout
- *   3. Rejects non-boolean results as "error" status (fail-open)
- *   4. Blocks Node.js-specific globals: process, require (not in vm context)
- *   5. Blocks dangerous ECMAScript built-ins: Function, eval, globalThis
- *      (nulled by CLEANUP_SCRIPT after createContext, then context is frozen)
- *   6. Returns fail-open (passed: true) for all error cases
+ * Demonstrates that evalPolicyRule enforces a defense-in-depth sandbox:
  *
- * Run with: pnpm --filter @workspace/scripts run test-policy-eval
+ *   Layer 1 (not tested here) — Storage-time AST validation (validatePolicyRule).
+ *
+ *   Layer 2 (tested here) — Runtime vm.Script sandbox with:
+ *     - Minimal prototype-less sandbox: only prompt/response/model/userId visible
+ *     - CLEANUP_SCRIPT nulls Function, eval, globalThis, Generator, AsyncFunction,
+ *       AsyncGenerator immediately after vm.createContext adds ECMAScript built-ins
+ *     - Object.freeze(vmCtx) locks the context so no script can re-introduce globals
+ *     - Hard 500ms timeout kills runaway scripts (infinite loops, CPU bombs)
+ *     - Strict boolean validation: non-boolean → { passed: true, error: msg }
+ *     - All exceptions caught and returned fail-open: { passed: true, error: msg }
+ *
+ * Run with: pnpm --filter @workspace/api-server run test-policy-eval
  */
 
-import { evalPolicyRule } from "../../artifacts/api-server/src/lib/policy-eval.js";
+import { evalPolicyRule } from "../src/lib/policy-eval.js";
 
 let passed = 0;
 let failed = 0;
@@ -69,7 +73,7 @@ console.log("\n── Policy eval regression tests ─────────�
   assert("passed === true", r.passed === true);
 }
 
-// 5. Infinite loop — must be terminated within timeout
+// 5. Infinite loop — must be terminated within hard timeout
 {
   console.log("\n5. Infinite loop — must terminate within 500ms hard timeout");
   const start = Date.now();
@@ -101,8 +105,8 @@ console.log("\n── Policy eval regression tests ─────────�
 
 // 8. ECMAScript built-in: Function — nulled by CLEANUP_SCRIPT after createContext
 {
-  console.log('\n8. Function constructor — nulled by post-createContext cleanup');
-  const r = evalPolicyRule('Function("return process")()', ctx);
+  console.log("\n8. Function constructor — nulled by post-createContext cleanup");
+  const r = evalPolicyRule("Function(\"return process\")()", ctx);
   assert("error is non-null (Function is undefined)", r.error !== null);
   assert("fail-open: passed === true", r.passed === true);
   if (r.error) console.log(`     error: "${r.error.slice(0, 80)}"`);
@@ -110,8 +114,8 @@ console.log("\n── Policy eval regression tests ─────────�
 
 // 9. ECMAScript built-in: eval — nulled by CLEANUP_SCRIPT
 {
-  console.log('\n9. eval() — nulled by post-createContext cleanup');
-  const r = evalPolicyRule('eval("process.exit(1)")', ctx);
+  console.log("\n9. eval() — nulled by post-createContext cleanup");
+  const r = evalPolicyRule("eval(\"process.exit(1)\")", ctx);
   assert("error is non-null (eval is undefined)", r.error !== null);
   assert("fail-open: passed === true", r.passed === true);
   if (r.error) console.log(`     error: "${r.error.slice(0, 80)}"`);
@@ -119,32 +123,35 @@ console.log("\n── Policy eval regression tests ─────────�
 
 // 10. ECMAScript built-in: globalThis — nulled by CLEANUP_SCRIPT
 {
-  console.log('\n10. globalThis — nulled by post-createContext cleanup');
-  const r = evalPolicyRule('globalThis.process !== undefined', ctx);
+  console.log("\n10. globalThis — nulled by post-createContext cleanup");
+  const r = evalPolicyRule("globalThis.process !== undefined", ctx);
   assert("error is non-null (globalThis is undefined)", r.error !== null);
   assert("fail-open: passed === true", r.passed === true);
   if (r.error) console.log(`     error: "${r.error.slice(0, 80)}"`);
 }
 
-// 11. Frozen context — assignment to Function is silently discarded; Function stays undefined
-// In a frozen vm context, non-strict assignment to a frozen property is silently ignored.
-// The comma expression's final value is the boolean `true`, so no error is raised here —
-// but the FREEZE proves its worth: Function is not re-introduced (tests 8+9 confirm it stays
-// undefined across independent evals because each call gets a fresh frozen context).
+// 11. Frozen context — re-assignment to Function is silently discarded
+// Object.freeze(vmCtx) is applied after CLEANUP_SCRIPT. In non-strict mode,
+// assigning to a frozen property is silently ignored rather than throwing.
+// The comma expression's final value (`true`) is a valid boolean result.
+// The key proof: Function stays undefined in every fresh context (tests 8+9).
 {
-  console.log("\n11. Context is frozen — assignment to Function is silently discarded");
+  console.log("\n11. Context is frozen — re-assignment to Function silently discarded");
   const r = evalPolicyRule("(Function = function(){}, true)", ctx);
-  // Non-strict mode: frozen assignment is silently dropped, returns true (valid boolean)
-  assert("no runtime error (assignment silently discarded by freeze)", r.error === null);
+  assert("no runtime error (frozen assignment silently dropped)", r.error === null);
   assert("passed === true (comma expression final value)", r.passed === true);
-  // Confirm Function is still inaccessible in a subsequent independent eval:
+  // Each evalPolicyRule call gets a fresh frozen context, so Function is always
+  // re-nulled by CLEANUP_SCRIPT. Confirm it remains undefined in a new eval:
   const r2 = evalPolicyRule("Function !== undefined", ctx);
-  assert("Function still undefined after re-assignment attempt (context is fresh+frozen)", r2.error !== null || r2.passed === false);
+  assert(
+    "Function stays undefined in fresh context (freeze + CLEANUP_SCRIPT hold)",
+    r2.error !== null || r2.passed === false,
+  );
 }
 
-// 12. Non-boolean result — error status
+// 12. Non-boolean result — surfaces as error status
 {
-  console.log('\n12. Non-boolean result (string) — surfaces as error status');
+  console.log("\n12. Non-boolean result (string) — surfaces as error status");
   const r = evalPolicyRule('"hello"', ctx);
   assert("error is non-null (non-boolean result)", r.error !== null);
   assert("fail-open: passed === true", r.passed === true);
@@ -153,7 +160,7 @@ console.log("\n── Policy eval regression tests ─────────�
 
 // 13. Complex valid rule
 {
-  console.log('\n13. Complex valid rule — combined conditions');
+  console.log("\n13. Complex valid rule — combined AND conditions");
   const r = evalPolicyRule(
     'prompt.length > 0 && response.includes("capital") && model.startsWith("gpt")',
     ctx,
@@ -170,7 +177,9 @@ console.log("\n── Policy eval regression tests ─────────�
   assert("passed === true (no confidential content)", r.passed === true);
 }
 
-console.log(`\n── Results: ${passed} passed, ${failed} failed ──────────────────────────────\n`);
+console.log(
+  `\n── Results: ${passed} passed, ${failed} failed ──────────────────────────────\n`,
+);
 
 if (failed > 0) {
   process.exit(1);

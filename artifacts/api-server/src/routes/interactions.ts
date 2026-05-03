@@ -95,8 +95,15 @@ const mintRateLimiter = rateLimit({
   keyGenerator: (req) => userId(req as Express.Request),
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  message: {
-    error: "Mint rate limit exceeded — you can create at most 30 receipts per minute. Please try again shortly.",
+  message: () => {
+    const max = Number(process.env["MINT_RATE_LIMIT_MAX"] ?? 30);
+    const windowSec = Math.round(
+      Number(process.env["MINT_RATE_LIMIT_WINDOW_MS"] ?? 60_000) / 1000,
+    );
+    const windowLabel = windowSec === 60 ? "minute" : `${windowSec} seconds`;
+    return {
+      error: `Mint rate limit exceeded — you can create at most ${max} receipts per ${windowLabel}. Please try again shortly.`,
+    };
   },
 });
 
