@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCreateInteraction } from "@workspace/api-client-react";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -31,6 +31,12 @@ export default function NewReceiptScreen() {
   const [model, setModel] = useState(MODELS[0]);
   const [saveError, setSaveError] = useState<"auth" | "generic" | null>(null);
 
+  const promptRef = useRef<TextInput>(null);
+  const responseRef = useRef<TextInput>(null);
+
+  const [listeningFor, setListeningFor] = useState<"prompt" | "response" | null>(null);
+  const [nativeDictateHint, setNativeDictateHint] = useState<"prompt" | "response" | null>(null);
+
   const { mutateAsync, isPending } = useCreateInteraction();
 
   async function handleSubmit() {
@@ -46,6 +52,71 @@ export default function NewReceiptScreen() {
       const status = (err as { status?: number })?.status;
       setSaveError(status === 401 ? "auth" : "generic");
     }
+  }
+
+  function startVoice(field: "prompt" | "response", currentValue: string) {
+    if (Platform.OS !== "web") {
+      if (field === "prompt") promptRef.current?.focus();
+      else responseRef.current?.focus();
+      setNativeDictateHint(field);
+      setTimeout(() => setNativeDictateHint(null), 3500);
+      return;
+    }
+
+    if (typeof window === "undefined") return;
+    const SpeechRec =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) return;
+
+    if (listeningFor === field) {
+      setListeningFor(null);
+      return;
+    }
+
+    setListeningFor(field);
+    const recognition = new SpeechRec();
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onend = () => setListeningFor(null);
+    recognition.onerror = () => setListeningFor(null);
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results as any[])
+        .map((r: any) => r[0].transcript)
+        .join(" ")
+        .trim();
+      if (field === "prompt") {
+        setPrompt((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      } else {
+        setResponse((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      }
+    };
+    recognition.start();
+  }
+
+  function MicButton({ field, value }: { field: "prompt" | "response"; value: string }) {
+    const active = listeningFor === field;
+    return (
+      <Pressable
+        onPress={() => startVoice(field, value)}
+        style={[
+          styles.micBtn,
+          { backgroundColor: active ? `${colors.primary}18` : "transparent" },
+        ]}
+        accessibilityLabel={active ? "Stop voice input" : `Start voice input for ${field}`}
+        accessibilityRole="button"
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Ionicons
+          name={active ? "mic" : "mic-outline"}
+          size={15}
+          color={active ? colors.primary : colors.mutedForeground}
+        />
+        <Text style={[styles.micLabel, { color: active ? colors.primary : colors.mutedForeground }]}>
+          {Platform.OS === "web" ? (active ? "Listening…" : "Dictate") : "Dictate"}
+        </Text>
+      </Pressable>
+    );
   }
 
   return (
@@ -106,8 +177,21 @@ export default function NewReceiptScreen() {
           ))}
         </ScrollView>
 
-        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>PROMPT</Text>
+        {/* Prompt field */}
+        <View style={styles.fieldRow}>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground, marginTop: 0, marginBottom: 0 }]}>PROMPT</Text>
+          <MicButton field="prompt" value={prompt} />
+        </View>
+        {nativeDictateHint === "prompt" && (
+          <View style={[styles.dictateHint, { backgroundColor: `${colors.primary}10`, borderColor: `${colors.primary}30` }]}>
+            <Ionicons name="mic" size={13} color={colors.primary} />
+            <Text style={[styles.dictateHintText, { color: colors.foreground }]}>
+              Tap the 🎤 key on your keyboard to speak
+            </Text>
+          </View>
+        )}
         <TextInput
+          ref={promptRef}
           style={[styles.textArea, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
           multiline
           numberOfLines={5}
@@ -116,10 +200,25 @@ export default function NewReceiptScreen() {
           value={prompt}
           onChangeText={setPrompt}
           textAlignVertical="top"
+          accessibilityLabel="AI prompt"
+          accessibilityHint="What you asked the AI. Tap Dictate or use the microphone key on your keyboard to speak."
         />
 
-        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>RESPONSE</Text>
+        {/* Response field */}
+        <View style={styles.fieldRow}>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground, marginTop: 0, marginBottom: 0 }]}>RESPONSE</Text>
+          <MicButton field="response" value={response} />
+        </View>
+        {nativeDictateHint === "response" && (
+          <View style={[styles.dictateHint, { backgroundColor: `${colors.primary}10`, borderColor: `${colors.primary}30` }]}>
+            <Ionicons name="mic" size={13} color={colors.primary} />
+            <Text style={[styles.dictateHintText, { color: colors.foreground }]}>
+              Tap the 🎤 key on your keyboard to speak
+            </Text>
+          </View>
+        )}
         <TextInput
+          ref={responseRef}
           style={[styles.textArea, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
           multiline
           numberOfLines={6}
@@ -128,10 +227,12 @@ export default function NewReceiptScreen() {
           value={response}
           onChangeText={setResponse}
           textAlignVertical="top"
+          accessibilityLabel="AI response"
+          accessibilityHint="What the AI replied. Tap Dictate or use the microphone key on your keyboard to speak."
         />
 
         <View style={[styles.infoBox, { backgroundColor: "rgba(27,59,111,0.08)", borderColor: "rgba(27,59,111,0.2)" }]}>
-          <Ionicons name="information-circle-outline" size={16} color={colors.navy} />
+          <Ionicons name="information-circle-outline" size={16} color="#1B3B6F" />
           <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
             Your receipt will be cryptographically signed and added to the immutable chain.
           </Text>
@@ -196,6 +297,39 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 8,
     marginTop: 16,
+  },
+  fieldRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  micBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  micLabel: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+  },
+  dictateHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 8,
+  },
+  dictateHintText: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
   },
   modelScroll: { marginBottom: 4 },
   modelChip: {

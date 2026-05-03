@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -183,6 +183,42 @@ export default function SimpleRecord() {
   const [needsAuth, setNeedsAuth] = useState(false);
   const [samplesOpen, setSamplesOpen] = useState(true);
 
+  const recognitionRef = useRef<any>(null);
+  const [activeVoiceField, setActiveVoiceField] = useState<"prompt" | "response" | null>(null);
+  const speechSupported =
+    typeof window !== "undefined" &&
+    ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+
+  function toggleVoice(field: "prompt" | "response") {
+    if (activeVoiceField === field) {
+      recognitionRef.current?.stop();
+      setActiveVoiceField(null);
+      return;
+    }
+    if (!speechSupported) return;
+    const SpeechRec =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRec();
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onend = () => setActiveVoiceField(null);
+    recognition.onerror = () => setActiveVoiceField(null);
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results as any[])
+        .map((r: any) => r[0].transcript)
+        .join(" ")
+        .trim();
+      const current = form.getValues(field);
+      form.setValue(field, current ? `${current} ${transcript}` : transcript, {
+        shouldValidate: true,
+      });
+    };
+    recognitionRef.current = recognition;
+    setActiveVoiceField(field);
+    recognition.start();
+  }
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: { prompt: "", response: "", model: "ChatGPT", tags: "" },
@@ -357,14 +393,37 @@ export default function SimpleRecord() {
                 render={({ field }) => (
                   <FormItem>
                     <FormControl>
-                      <Textarea
-                        {...field}
-                        rows={5}
-                        placeholder="e.g. Summarise the key risks in this contract..."
-                        className="rounded-xl text-sm resize-none"
-                        data-testid="simple-input-prompt"
-                      />
+                      <div className="relative">
+                        <Textarea
+                          {...field}
+                          rows={5}
+                          placeholder="e.g. Summarise the key risks in this contract..."
+                          className="rounded-xl text-sm resize-none pr-10"
+                          data-testid="simple-input-prompt"
+                          aria-label="AI prompt"
+                        />
+                        {speechSupported && (
+                          <button
+                            type="button"
+                            onClick={() => toggleVoice("prompt")}
+                            className={`absolute top-2.5 right-2.5 p-1.5 rounded-lg transition-all ${
+                              activeVoiceField === "prompt"
+                                ? "bg-red-500/10 text-red-500"
+                                : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
+                            }`}
+                            aria-label={activeVoiceField === "prompt" ? "Stop listening" : "Dictate prompt"}
+                            title={activeVoiceField === "prompt" ? "Stop" : "Dictate"}
+                          >
+                            <Mic className={`w-4 h-4 ${activeVoiceField === "prompt" ? "animate-pulse" : ""}`} />
+                          </button>
+                        )}
+                      </div>
                     </FormControl>
+                    {activeVoiceField === "prompt" && (
+                      <p className="text-xs text-red-500 flex items-center gap-1 mt-1">
+                        <Mic className="w-3 h-3 animate-pulse" /> Listening… speak now
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -385,14 +444,37 @@ export default function SimpleRecord() {
                   render={({ field }) => (
                     <FormItem>
                       <FormControl>
-                        <Textarea
-                          {...field}
-                          rows={7}
-                          placeholder="Paste the AI's full response here..."
-                          className="rounded-xl text-sm resize-none"
-                          data-testid="simple-input-response"
-                        />
+                        <div className="relative">
+                          <Textarea
+                            {...field}
+                            rows={7}
+                            placeholder="Paste the AI's full response here..."
+                            className="rounded-xl text-sm resize-none pr-10"
+                            data-testid="simple-input-response"
+                            aria-label="AI response"
+                          />
+                          {speechSupported && (
+                            <button
+                              type="button"
+                              onClick={() => toggleVoice("response")}
+                              className={`absolute top-2.5 right-2.5 p-1.5 rounded-lg transition-all ${
+                                activeVoiceField === "response"
+                                  ? "bg-red-500/10 text-red-500"
+                                  : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
+                              }`}
+                              aria-label={activeVoiceField === "response" ? "Stop listening" : "Dictate response"}
+                              title={activeVoiceField === "response" ? "Stop" : "Dictate"}
+                            >
+                              <Mic className={`w-4 h-4 ${activeVoiceField === "response" ? "animate-pulse" : ""}`} />
+                            </button>
+                          )}
+                        </div>
                       </FormControl>
+                      {activeVoiceField === "response" && (
+                        <p className="text-xs text-red-500 flex items-center gap-1 mt-1">
+                          <Mic className="w-3 h-3 animate-pulse" /> Listening… speak now
+                        </p>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}

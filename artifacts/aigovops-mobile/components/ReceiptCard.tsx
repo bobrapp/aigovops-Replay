@@ -34,6 +34,15 @@ export function ReceiptCard({ item }: ReceiptCardProps) {
   const date = new Date(item.createdAt).toLocaleDateString([], { month: "short", day: "numeric" });
   const promptPreview = item.prompt?.slice(0, 80) ?? "";
 
+  const statusLabel =
+    item.policyStatus === "pass"
+      ? "passed policy"
+      : item.policyStatus === "fail"
+      ? "failed policy"
+      : "policy pending";
+
+  const accessibilityLabel = `Receipt · ${item.model} · ${statusLabel} · ${date} at ${time}. Prompt: ${promptPreview}${promptPreview.length >= 80 ? "…" : ""}`;
+
   return (
     <AnimatedPressable
       style={[
@@ -44,6 +53,9 @@ export function ReceiptCard({ item }: ReceiptCardProps) {
       onPressIn={() => { scale.value = withSpring(0.97, { damping: 20 }); }}
       onPressOut={() => { scale.value = withSpring(1, { damping: 20 }); }}
       onPress={() => router.push(`/receipt/${item.id}` as any)}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      accessibilityHint="Double tap to view full receipt details"
     >
       <View style={styles.header}>
         <View style={styles.modelRow}>
