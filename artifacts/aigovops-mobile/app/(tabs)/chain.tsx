@@ -73,7 +73,7 @@ export default function ChainScreen() {
     setExporting(true);
     try {
       const url = `${BASE_URL}${fmt.path}`;
-      const filename = `aigovops-chain.${fmt.ext}`;
+      const fallbackFilename = `aigovops-chain.${fmt.ext}`;
 
       if (Platform.OS === "web") {
         // Web: fetch with bearer auth, create a Blob URL, trigger browser download.
@@ -81,6 +81,11 @@ export default function ChainScreen() {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        // Honour the server-assigned filename from Content-Disposition so the
+        // download carries the full aigovops-chain-{userId}-{date}.{ext} name.
+        const disposition = res.headers.get("content-disposition") ?? "";
+        const match = disposition.match(/filename="?([^";\s]+)"?/i);
+        const filename = match?.[1] ?? fallbackFilename;
         const blob = await res.blob();
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -95,7 +100,10 @@ export default function ChainScreen() {
       } else {
         // Native: download to a temp file via expo-file-system v55, then invoke
         // the OS share sheet via expo-sharing so the user can save / forward.
-        const tmpFile = new File(Paths.cache, filename);
+        // Use the server-assigned filename (from Content-Disposition) so the
+        // share sheet displays the full aigovops-chain-{userId}-{date}.{ext} name.
+        // We download first (to get the header), then share from the tmp path.
+        const tmpFile = new File(Paths.cache, fallbackFilename);
         const downloadedFile = await File.downloadFileAsync(url, tmpFile, {
           headers: { Authorization: `Bearer ${token}` },
         });

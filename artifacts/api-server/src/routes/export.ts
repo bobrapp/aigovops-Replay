@@ -290,7 +290,7 @@ function HTML_FOOT(count: number, date: string): string {
   var total = receipts.length;
 
   // Sort ascending by createdAt (oldest first) for chain walk
-  receipts.sort(function(a,b){ return a.createdAt < b.createdAt ? -1 : 1; });
+  receipts.sort(function(a,b){ return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0; });
 
   // ── sha256 via Web Crypto ──────────────────────────────────────────────────
   async function sha256hex(str){
