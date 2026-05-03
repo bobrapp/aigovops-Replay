@@ -1,0 +1,167 @@
+# AIGovOps REPLAY — Hero Rewrite & 5-Second Test Recommendations
+
+**Source site:** https://aigovopsreplay.com/
+**Goal:** Communicate *what* the product is and *why* it matters in under 5 seconds.
+**Prototype URL:** https://www.perplexity.ai/computer/a/aigovops-replay-hero-rewrite-72COejt4REqge1V86BD3PA
+
+---
+
+## 1. Diagnosis: What the current site does in 5 seconds
+
+| Element | Current state | Issue |
+|---|---|---|
+| Headline | "Every AI interaction, cryptographically proven." | Poetic but slow. "Cryptographically" forces translation. Mechanism, not outcome. |
+| Bullets | Signed receipts / Immutable chain / Policy compliance | These are *how*, not *why*. Visitors don't know what the stakes are. |
+| Right rail | Simple vs Expert mode picker + Replit sign-in | Forces a choice before the visitor knows what they're signing into. |
+| Feedback popover | Bright "Sign in" button | Competes with the primary CTA at the worst moment. |
+| Visual | None above the fold | No artifact to anchor comprehension. Words alone won't beat 5 seconds. |
+
+**The what is implied. The why is missing.**
+
+---
+
+## 2. The fix: lead with outcome, demote mechanism
+
+### Recommended headline pattern
+
+**Outcome verb in headline. Mechanism in subhead. Stakes in the strip below.**
+
+### Headline options by audience
+
+| Audience | Headline | Subhead |
+|---|---|---|
+| Compliance / Risk (Expert mode) | Prove what your AI said. Every time. | Tamper-proof receipts for every AI chat — pass audits, catch policy violations, replay any conversation in one click. |
+| Builders / Devs | The black box for your AI. | Signed, replayable receipts for every model call. Drop-in SDK, policy-as-code, full audit trail. |
+| Journalists / Researchers (Simple mode) | Screenshots can be faked. Receipts can't. | Save every AI conversation as cryptographic proof — verify what was said, when, and by which model. |
+| Punchy / general | Court-ready receipts for AI. | Every prompt and response, cryptographically signed and replayable. |
+
+### Recommended pick (used in the prototype)
+
+> # Prove what your AI said. Every time.
+>
+> Tamper-proof, cryptographically signed receipts for every AI conversation — pass audits, catch policy violations, and replay any chat in one click.
+
+---
+
+## 3. Replace feature bullets with stakes
+
+The current three-bullet feature list explains the product. Replace with three **stakes** that explain the *consequences of not having it*.
+
+| Stake | Copy |
+|---|---|
+| Disputed AI output? | Replay the exact conversation, byte-for-byte. Same prompt, same model version, same response — every time. |
+| Auditor at the door? | Hand them a signed receipt for any AI interaction. Cryptographic proof, not screenshots that anyone can fake. |
+| Policy violation? | Flagged the moment it happens. Policy-as-code rules check every interaction the instant it's signed. |
+
+Pair each with a small icon. Each one is one beat — the eye scans them in ~1.5 seconds.
+
+---
+
+## 4. Add a hero visual that does the explaining
+
+Words alone cannot win 5 seconds. The prototype includes a live receipt mock with:
+
+- Chat preview at the top (user + assistant bubbles with timestamp).
+- Divider into signed metadata: `TIMESTAMP`, `MODEL`, `SHA-256`, `PREV LINK`.
+- Animated **VERIFIED** stamp that snaps into place on load.
+- A chain link motif below, hinting at the immutable chain.
+
+A picture of a receipt being signed is worth more than any tagline.
+
+### Asset variants to produce
+
+- **Static hero image** (delivered: `receipt.png`) — drop-in for the existing site if you don't want to swap the whole hero.
+- **Animated GIF or Lottie** — chat → receipt drops → "Replay" reproduces output. ~12s loop.
+- **Before/after diff** — tampered message in red ("chain broken") vs intact green ("chain verified").
+
+---
+
+## 5. Fix the right rail
+
+The mode picker + Replit sign-in + feedback popover all fight for attention before the visitor knows what the product is.
+
+| Current | Recommended |
+|---|---|
+| Simple/Expert mode selector above the fold | Move below the fold, or behind the CTA. First-time visitors don't know which they are. |
+| "Sign in with Replit" as primary action | Demote to secondary. Make **"See a sample receipt"** primary — zero clicks to the aha moment. |
+| Feedback popover always visible | Suppress until the user has scrolled or spent >15s. It's currently the brightest button on the page. |
+
+---
+
+## 6. Add a one-line audience tag
+
+Right under the logo lockup, add a single line answering "is this for me?":
+
+> Built for compliance teams, AI developers, and anyone who needs to prove what an AI said.
+
+Cheap, but it answers the silent question every visitor asks in second 2.
+
+---
+
+## 7. Trust signals in the corner of the eye
+
+In 5 seconds, peripheral vision matters. Add a thin strip under the hero with:
+
+- `SHA-256 signed` · `Immutable chain` · `Open source` · `Policy-as-code` badges.
+- One customer or design-partner logo, even a pilot one.
+- "Used to verify N receipts" live counter (if you have the data).
+
+These don't need to be read — they register as legitimacy.
+
+---
+
+## 8. A/B-testable copy variants
+
+Run these against your current headline using the [5-second test](https://www.usability.gov/how-to-and-tools/methods/five-second-tests.html) framework: after 5 seconds, can a stranger tell you (1) what it does, (2) who it's for, (3) why they'd care?
+
+| Variant | Headline | Subhead |
+|---|---|---|
+| A — outcome | Prove what your AI said. | Tamper-proof receipts for every AI conversation. |
+| B — fear | When AI goes wrong, you'll want the receipts. | Cryptographically signed proof of every prompt and response. |
+| C — concrete | A black box recorder for AI. | Every interaction, signed, replayable, audit-ready. |
+
+---
+
+## 9. Priority order if you only do three things
+
+1. **Rewrite the headline** to lead with outcome ("Prove what your AI said") and move "cryptographically" to the subhead.
+2. **Add a hero visual** of a signed receipt — static is fine, animated is better.
+3. **Kill the mode picker above the fold** and replace with one CTA: "See a sample receipt."
+
+---
+
+## 10. Prototype design system (for reference)
+
+| Token | Value |
+|---|---|
+| Background | `#060d1a` deep navy with radial emerald glows |
+| Surface | `#0f1d33` / `#16263f` slate panels with 25% emerald borders |
+| Primary accent | `#10b981` emerald-500 (CTAs, verified seal, hash highlights) |
+| Secondary accent | `#34d399` emerald-400 (gradient text, links, glows) |
+| Display font | Satoshi (Fontshare), weights 400–900, `letter-spacing: -0.02em` |
+| Body font | Inter, weights 400–600 |
+| Mono font | JetBrains Mono for hashes and metadata |
+| Shadow | `0 0 60px -10px rgba(16,185,129,0.45)` for the glow halo |
+| Motion | 6s float on hero card, 1.4s spring stamp animation, draw-line on chain SVG, type-in bars on chat preview |
+
+---
+
+## 11. Files & links
+
+- **Live prototype:** https://www.perplexity.ai/computer/a/aigovops-replay-hero-rewrite-72COejt4REqge1V86BD3PA
+- **Hero visual (PNG):** delivered as `receipt.png` in the prototype bundle
+- **HTML source:** single-file Tailwind via CDN, ~415 lines, drop-in replaceable
+
+---
+
+## 12. Suggested next steps
+
+- [ ] Wire the "See a sample receipt" CTA to a modal with a real signed receipt + a **"tamper this"** button that visibly breaks the chain. That's the killer demo.
+- [ ] Run the 5-second test on the new hero with 5–10 strangers (UsabilityHub or in-person). Validate that they can answer the three questions.
+- [ ] Generate animated GIF of the stamping sequence for use in social, docs, and pitch decks.
+- [ ] Port the hero into the actual Replit project structure (Next.js / Vite / etc.) once copy is locked.
+- [ ] Consider a "for compliance teams" and "for developers" landing-page split so each audience gets the headline tuned to them.
+
+---
+
+*Document generated: 2026-05-03 · Prototype built with Tailwind CSS v3, vanilla HTML, and an AI-generated hero illustration.*
