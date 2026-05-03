@@ -52,6 +52,17 @@ function buildAllowedOrigins(): (string | RegExp)[] {
 
 const allowedOrigins = buildAllowedOrigins();
 
+// Fail fast in production if no origins are configured — the CSRF guard
+// would otherwise skip enforcement, leaving state-changing routes unprotected.
+if (process.env.NODE_ENV === "production" && allowedOrigins.length === 0) {
+  throw new Error(
+    "FATAL: allowedOrigins is empty in production. " +
+    "Set APP_ORIGIN or ensure REPLIT_DOMAINS / REPLIT_DEV_DOMAIN are present.",
+  );
+}
+
+logger.info({ count: allowedOrigins.length }, "CORS/CSRF origin allowlist configured");
+
 function isAllowedOrigin(origin: string): boolean {
   return allowedOrigins.some(a =>
     typeof a === "string" ? a === origin : a.test(origin),
