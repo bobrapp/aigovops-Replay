@@ -1,5 +1,5 @@
 import { useGetChain } from "@workspace/api-client-react";
-import { Link2, CheckCircle, XCircle, Download, ChevronDown } from "lucide-react";
+import { Link2, CheckCircle, XCircle, Download, ChevronDown, Activity, Loader2, AlertTriangle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link as WouterLink } from "wouter";
 import { useState, useRef, useEffect } from "react";
@@ -66,6 +66,131 @@ function DownloadDropdown() {
   );
 }
 
+interface ChainHealthResult {
+  total: number;
+  valid: number;
+  firstFailedId: string | null;
+  capped: boolean;
+  elapsedMs: number;
+}
+
+function ChainHealthPanel() {
+  const [scanning, setScanning] = useState(false);
+  const [health, setHealth] = useState<ChainHealthResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function runHealthScan() {
+    setScanning(true);
+    setHealth(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/chain/health");
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data = (await res.json()) as ChainHealthResult;
+      setHealth(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Scan failed");
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  const allValid = health !== null && health.valid === health.total;
+  const pct = health ? Math.round((health.valid / Math.max(health.total, 1)) * 100) : 0;
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-4 space-y-3" data-testid="chain-health-panel">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs text-muted-foreground uppercase tracking-wider font-semibold flex items-center gap-1.5">
+          <Activity className="w-3.5 h-3.5" />Full Chain Health
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2 font-semibold"
+          onClick={runHealthScan}
+          disabled={scanning}
+          data-testid="button-scan-chain-health"
+        >
+          {scanning ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Scanning…</> : <><Activity className="w-3.5 h-3.5" />Scan full chain</>}
+        </Button>
+      </div>
+
+      {scanning && (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground">Re-verifying every receipt in your chain…</div>
+          <div className="h-2 rounded-full bg-muted overflow-hidden">
+            <div className="h-full bg-primary/50 animate-pulse rounded-full w-full" />
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-center gap-2 text-xs text-red-600 font-medium" data-testid="chain-health-error">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />{error}
+        </div>
+      )}
+
+      {health && (
+        <div className="space-y-3" data-testid="chain-health-result">
+          {/* Progress bar */}
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-xs font-semibold">
+              <span className={allValid ? "text-emerald-600" : "text-red-600"}>
+                {allValid ? "All receipts intact" : `${health.valid} / ${health.total} passed`}
+              </span>
+              <span className="text-muted-foreground">{pct}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-muted overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ${allValid ? "bg-emerald-500" : "bg-red-500"}`}
+                style={{ width: `${pct}%` }}
+                data-testid="chain-health-bar"
+              />
+            </div>
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3 text-xs">
+            <div className="text-center p-2 rounded-md bg-muted/50">
+              <div className="font-bold text-foreground text-base">{health.total}</div>
+              <div className="text-muted-foreground">{health.capped ? "checked (capped)" : "checked"}</div>
+            </div>
+            <div className="text-center p-2 rounded-md bg-emerald-50 border border-emerald-100">
+              <div className="font-bold text-emerald-700 text-base">{health.valid}</div>
+              <div className="text-emerald-600">valid</div>
+            </div>
+            <div className="text-center p-2 rounded-md bg-muted/50">
+              <div className="font-bold text-muted-foreground text-base">{health.elapsedMs}ms</div>
+              <div className="text-muted-foreground">elapsed</div>
+            </div>
+          </div>
+
+          {/* Failure detail */}
+          {health.firstFailedId && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2.5" data-testid="chain-health-first-fail">
+              <AlertTriangle className="w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="text-xs">
+                <span className="text-red-700 font-semibold">First failing receipt: </span>
+                <WouterLink href={`/receipts/${health.firstFailedId}`}>
+                  <span className="text-red-600 font-mono hover:underline cursor-pointer">{health.firstFailedId.slice(0, 24)}…</span>
+                </WouterLink>
+              </div>
+            </div>
+          )}
+
+          {health.capped && (
+            <div className="text-xs text-amber-600 font-medium flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Scan capped at {health.total} receipts — chain may be longer
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ChainView() {
   const { data: chain, isLoading } = useGetChain();
 
@@ -91,6 +216,8 @@ export default function ChainView() {
         </div>
         <DownloadDropdown />
       </div>
+
+      <ChainHealthPanel />
 
       {chain && (
         <div className="bg-card border border-border rounded-lg p-4 text-sm">

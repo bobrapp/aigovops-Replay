@@ -504,3 +504,99 @@ export const GetAuditChainStatusResponse = zod
   .describe(
     "Integrity status of the activity_log hash chain. Entries with NULL logHash (pre-migration legacy rows) are counted in `total` but excluded from `hashableEntries` and hash verification.\n",
   );
+
+/**
+ * Authenticated, owner-only. Creates a short-lived HMAC token that grants read-only public access to this receipt's verification result via GET /verify/{id}?token=... — no account required to view it. Expiry is configurable via SHARE_TOKEN_EXPIRY_DAYS (default 7 days).
+
+ * @summary Generate a public share token for a receipt's verification result
+ */
+export const CreateShareTokenParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * Token-gated public endpoint. Validates the share token, then returns the receipt's verification result. The prompt is redacted when ?redact=1 is passed. The response body omits the raw prompt/response when redacted. Returns 401 when the token is missing, expired, or invalid.
+
+ * @summary Public receipt verification via share token (no login required)
+ */
+export const GetPublicVerificationParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetPublicVerificationQueryParams = zod.object({
+  token: zod.coerce.string(),
+  redact: zod
+    .enum(["0", "1"])
+    .optional()
+    .describe('Pass \"1\" to redact the prompt and response from the result.'),
+});
+
+export const GetPublicVerificationResponse = zod
+  .object({
+    id: zod.string(),
+    model: zod.string(),
+    createdAt: zod.coerce.date(),
+    prompt: zod
+      .string()
+      .nullish()
+      .describe(
+        "Full prompt text, or null when the issuer requested redaction.",
+      ),
+    response: zod
+      .string()
+      .nullish()
+      .describe(
+        "Full response text, or null when the issuer requested redaction.",
+      ),
+    redacted: zod
+      .boolean()
+      .describe(
+        "True when prompt and response have been omitted at the issuer's request.",
+      ),
+    promptHash: zod.string(),
+    responseHash: zod.string(),
+    chainHash: zod.string(),
+    prevHash: zod.string().nullish(),
+    policyStatus: zod.enum(["pass", "fail", "pending", "error"]),
+    valid: zod.boolean(),
+    promptHashMatch: zod.boolean(),
+    responseHashMatch: zod.boolean(),
+    chainIntact: zod.boolean(),
+    details: zod.string(),
+    checkedAt: zod.coerce.date(),
+  })
+  .describe(
+    "Verification result returned from the public (token-gated) verify endpoint. Does not require a logged-in session. Prompt and response are present unless the issuer requested redaction via ?redact=1.\n",
+  );
+
+/**
+ * Walks all of the authenticated user's receipts oldest-first, re-derives each hash, and checks that each receipt's prevHash equals the preceding receipt's chainHash. Returns a health summary: total receipts, count of valid receipts, the first receipt ID that failed (if any), and elapsed time. Capped at CHAIN_HEALTH_ROW_CAP rows (default 50 000) to prevent abuse on very long chains.
+
+ * @summary Re-verify every receipt in the authenticated user's chain
+ */
+export const GetChainHealthResponse = zod
+  .object({
+    total: zod
+      .number()
+      .describe(
+        "Number of receipts examined (may be less than chain length when capped)",
+      ),
+    valid: zod
+      .number()
+      .describe("Number of receipts that passed all hash checks"),
+    firstFailedId: zod
+      .string()
+      .nullable()
+      .describe(
+        "ID of the first receipt that failed verification, or null if all passed",
+      ),
+    capped: zod
+      .boolean()
+      .describe("True when the walk was cut short by the row cap"),
+    elapsedMs: zod
+      .number()
+      .describe("Wall-clock milliseconds the verification walk took"),
+  })
+  .describe(
+    "Result of a full chain re-verification walk. Every receipt is checked oldest-first: hashes are re-derived and each receipt's prevHash must equal the preceding receipt's chainHash. Capped at CHAIN_HEALTH_ROW_CAP rows (default 50 000) to guard against unbounded scans.\n",
+  );

@@ -22,6 +22,8 @@ tags:
     description: Admin-only audit log integrity operations
   - name: export
     description: Portable chain export endpoints (JSONL, HTML bundle, SQLite)
+  - name: verification
+    description: Public receipt verification and chain health
 paths:
   /auth/user:
     get:
@@ -438,6 +440,99 @@ paths:
           description: Unauthorized — admin session required
         "503":
           description: Service unavailable — ADMIN_API_KEY not configured
+
+  /interactions/{id}/share-token:
+    post:
+      operationId: createShareToken
+      tags: [verification]
+      summary: Generate a public share token for a receipt's verification result
+      description: >
+        Authenticated, owner-only. Creates a short-lived HMAC token that grants
+        read-only public access to this receipt's verification result via
+        GET /verify/{id}?token=... — no account required to view it.
+        Expiry is configurable via SHARE_TOKEN_EXPIRY_DAYS (default 7 days).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Share token created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareTokenResult"
+        "403":
+          description: Forbidden — receipt belongs to another user
+        "404":
+          description: Not found
+
+  /verify/{id}:
+    get:
+      operationId: getPublicVerification
+      tags: [verification]
+      summary: Public receipt verification via share token (no login required)
+      description: >
+        Token-gated public endpoint. Validates the share token, then returns the
+        receipt's verification result. The prompt is redacted when ?redact=1 is
+        passed. The response body omits the raw prompt/response when redacted.
+        Returns 401 when the token is missing, expired, or invalid.
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: redact
+          in: query
+          required: false
+          description: Pass "1" to redact the prompt and response from the result.
+          schema:
+            type: string
+            enum: ["0", "1"]
+      responses:
+        "200":
+          description: Public verification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicVerificationResult"
+        "401":
+          description: Token missing, expired, or invalid
+        "404":
+          description: Receipt not found
+        "422":
+          description: Chain depth limit exceeded — ancestry walk was truncated
+
+  /chain/health:
+    get:
+      operationId: getChainHealth
+      tags: [verification]
+      summary: Re-verify every receipt in the authenticated user's chain
+      description: >
+        Walks all of the authenticated user's receipts oldest-first, re-derives
+        each hash, and checks that each receipt's prevHash equals the preceding
+        receipt's chainHash. Returns a health summary: total receipts, count of
+        valid receipts, the first receipt ID that failed (if any), and elapsed
+        time. Capped at CHAIN_HEALTH_ROW_CAP rows (default 50 000) to prevent
+        abuse on very long chains.
+      responses:
+        "200":
+          description: Chain health summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChainHealthResult"
+        "401":
+          description: Unauthorized
 
   /export/jsonl:
     get:
@@ -1021,6 +1116,121 @@ components:
         - intact
         - tampered
         - verifiedAt
+
+    ShareTokenResult:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Raw share token to embed in the public verification URL.
+        verifyUrl:
+          type: string
+          description: Full public URL for sharing (includes token in query string).
+        expiresAt:
+          type: string
+          format: date-time
+          description: ISO-8601 timestamp when this token expires (default 7 days from now).
+      required:
+        - token
+        - verifyUrl
+        - expiresAt
+
+    PublicVerificationResult:
+      type: object
+      description: >
+        Verification result returned from the public (token-gated) verify endpoint.
+        Does not require a logged-in session. Prompt and response are present
+        unless the issuer requested redaction via ?redact=1.
+      properties:
+        id:
+          type: string
+        model:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        prompt:
+          type: string
+          nullable: true
+          description: Full prompt text, or null when the issuer requested redaction.
+        response:
+          type: string
+          nullable: true
+          description: Full response text, or null when the issuer requested redaction.
+        redacted:
+          type: boolean
+          description: True when prompt and response have been omitted at the issuer's request.
+        promptHash:
+          type: string
+        responseHash:
+          type: string
+        chainHash:
+          type: string
+        prevHash:
+          type: string
+          nullable: true
+        policyStatus:
+          type: string
+          enum: [pass, fail, pending, error]
+        valid:
+          type: boolean
+        promptHashMatch:
+          type: boolean
+        responseHashMatch:
+          type: boolean
+        chainIntact:
+          type: boolean
+        details:
+          type: string
+        checkedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - model
+        - createdAt
+        - redacted
+        - promptHash
+        - responseHash
+        - chainHash
+        - policyStatus
+        - valid
+        - promptHashMatch
+        - responseHashMatch
+        - chainIntact
+        - details
+        - checkedAt
+
+    ChainHealthResult:
+      type: object
+      description: >
+        Result of a full chain re-verification walk. Every receipt is checked
+        oldest-first: hashes are re-derived and each receipt's prevHash must equal
+        the preceding receipt's chainHash. Capped at CHAIN_HEALTH_ROW_CAP rows
+        (default 50 000) to guard against unbounded scans.
+      properties:
+        total:
+          type: integer
+          description: Number of receipts examined (may be less than chain length when capped)
+        valid:
+          type: integer
+          description: Number of receipts that passed all hash checks
+        firstFailedId:
+          type: string
+          nullable: true
+          description: ID of the first receipt that failed verification, or null if all passed
+        capped:
+          type: boolean
+          description: True when the walk was cut short by the row cap
+        elapsedMs:
+          type: integer
+          description: Wall-clock milliseconds the verification walk took
+      required:
+        - total
+        - valid
+        - firstFailedId
+        - capped
+        - elapsedMs
 
     ChainSummary:
       type: object

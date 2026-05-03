@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, Mail, Download, Printer, Check, Share2 } from "lucide-react";
+import { Copy, Mail, Download, Printer, Check, Share2, Link as LinkIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ShareReceiptProps {
@@ -18,7 +18,9 @@ interface ShareReceiptProps {
 }
 
 export function ShareReceipt({ interaction }: ShareReceiptProps) {
-  const [copied, setCopied] = useState<"link" | "json" | null>(null);
+  const [copied, setCopied] = useState<"link" | "json" | "verify" | null>(null);
+  const [verifyLinkLoading, setVerifyLinkLoading] = useState(false);
+  const [verifyLinkError, setVerifyLinkError] = useState<string | null>(null);
 
   const base = import.meta.env.BASE_URL.replace(/\/$/, "");
   const receiptUrl = `${window.location.origin}${base}/receipts/${interaction.id}`;
@@ -52,6 +54,25 @@ export function ShareReceipt({ interaction }: ShareReceiptProps) {
     await navigator.clipboard.writeText(receiptJson);
     setCopied("json");
     setTimeout(() => setCopied(null), 2000);
+  }
+
+  async function copyVerifyLink() {
+    setVerifyLinkLoading(true);
+    setVerifyLinkError(null);
+    try {
+      const res = await fetch(`${base}/api/interactions/${interaction.id}/share-token`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data = (await res.json()) as { token: string; verifyUrl: string; expiresAt: string };
+      await navigator.clipboard.writeText(data.verifyUrl);
+      setCopied("verify");
+      setTimeout(() => setCopied(null), 3000);
+    } catch (err) {
+      setVerifyLinkError(err instanceof Error ? err.message : "Failed to generate link");
+    } finally {
+      setVerifyLinkLoading(false);
+    }
   }
 
   function emailReceipt() {
@@ -93,6 +114,25 @@ export function ShareReceipt({ interaction }: ShareReceiptProps) {
         Share This Receipt
       </div>
       <div className="flex items-center gap-2 flex-wrap">
+        {/* Share public verification link — calls POST /share-token, copies URL */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2 font-semibold"
+          onClick={copyVerifyLink}
+          disabled={verifyLinkLoading}
+          data-testid="share-verify-link"
+        >
+          {verifyLinkLoading ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : copied === "verify" ? (
+            <Check className="w-3.5 h-3.5 text-emerald-600" />
+          ) : (
+            <LinkIcon className="w-3.5 h-3.5" />
+          )}
+          {copied === "verify" ? "Copied!" : "Share Verification Link"}
+        </Button>
+
         <Button
           variant="outline"
           size="sm"
@@ -152,6 +192,9 @@ export function ShareReceipt({ interaction }: ShareReceiptProps) {
           Print / PDF
         </Button>
       </div>
+      {verifyLinkError && (
+        <div className="mt-2 text-xs text-red-600 font-medium" data-testid="share-verify-error">{verifyLinkError}</div>
+      )}
     </div>
   );
 }

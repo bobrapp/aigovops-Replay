@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useGetStats } from "@workspace/api-client-react";
 import TutorialPage from "./pages/tutorial";
 import CertificatePage from "./pages/certificate";
+import PublicVerifyPage from "./pages/public-verify";
 
 // Expert pages
 import Dashboard from "./pages/dashboard";
@@ -669,9 +670,15 @@ function App() {
           <ModeProvider>
             <AdminAuthProvider>
               <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-                <AuthGate>
-                  <Router />
-                </AuthGate>
+                <Switch>
+                  {/* Public route — no auth required; must come before AuthGate */}
+                  <Route path="/verify/:id" component={PublicVerifyPage} />
+                  <Route>
+                    <AuthGate>
+                      <Router />
+                    </AuthGate>
+                  </Route>
+                </Switch>
               </WouterRouter>
             </AdminAuthProvider>
           </ModeProvider>

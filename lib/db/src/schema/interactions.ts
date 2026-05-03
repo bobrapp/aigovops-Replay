@@ -111,3 +111,29 @@ export const activityLogTable = pgTable("activity_log", {
 });
 
 export type ActivityLog = typeof activityLogTable.$inferSelect;
+
+/**
+ * share_tokens — short-lived HMAC tokens granting public read-only access
+ * to a single receipt's verification result.
+ *
+ * Each row ties one token (stored as its SHA-256 HMAC, never the raw token)
+ * to one interaction. The owner generates a token via
+ * POST /api/interactions/:id/share-token; anyone with the raw token can
+ * call GET /api/verify/:id?token=... without logging in.
+ *
+ * Security properties:
+ *   - token_hash stores sha256(rawToken) so a DB dump doesn't leak usable tokens.
+ *   - expires_at enforces a configurable TTL (default 7 days).
+ *   - interaction_id + user_id are stored so the public endpoint can scope its
+ *     verification query without a second lookup.
+ */
+export const shareTokensTable = pgTable("share_tokens", {
+  id: text("id").primaryKey(),
+  interactionId: text("interaction_id").notNull(),
+  userId: text("user_id").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type ShareToken = typeof shareTokensTable.$inferSelect;

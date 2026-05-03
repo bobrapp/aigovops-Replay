@@ -15,6 +15,13 @@
       "when": 1777846800000,
       "tag": "0001_add_activity_log_hash_chain",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1746316800000,
+      "tag": "0002_add_share_tokens",
+      "breakpoints": true
     }
   ]
 }

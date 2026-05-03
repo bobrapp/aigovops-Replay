@@ -21,10 +21,12 @@ import type {
   AuthUserEnvelope,
   BeginBrowserLoginParams,
   BrowserLogoutSuccess,
+  ChainHealthResult,
   ChainSummary,
   CreateInteractionBody,
   CreatePolicyBody,
   ErrorEnvelope,
+  GetPublicVerificationParams,
   HandleBrowserLoginCallbackParams,
   HealthStatus,
   Interaction,
@@ -35,7 +37,9 @@ import type {
   MobileTokenExchangeSuccess,
   Policy,
   PolicyList,
+  PublicVerificationResult,
   ReplayResult,
+  ShareTokenResult,
   Stats,
   UpdatePolicyBody,
   VerificationResult,
@@ -1718,6 +1722,288 @@ export function useGetAuditChainStatus<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetAuditChainStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Authenticated, owner-only. Creates a short-lived HMAC token that grants read-only public access to this receipt's verification result via GET /verify/{id}?token=... — no account required to view it. Expiry is configurable via SHARE_TOKEN_EXPIRY_DAYS (default 7 days).
+
+ * @summary Generate a public share token for a receipt's verification result
+ */
+export const getCreateShareTokenUrl = (id: string) => {
+  return `/api/interactions/${id}/share-token`;
+};
+
+export const createShareToken = async (
+  id: string,
+  options?: RequestInit,
+): Promise<ShareTokenResult> => {
+  return customFetch<ShareTokenResult>(getCreateShareTokenUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getCreateShareTokenMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createShareToken>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createShareToken>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["createShareToken"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createShareToken>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return createShareToken(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateShareTokenMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createShareToken>>
+>;
+
+export type CreateShareTokenMutationError = ErrorType<void>;
+
+/**
+ * @summary Generate a public share token for a receipt's verification result
+ */
+export const useCreateShareToken = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createShareToken>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createShareToken>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getCreateShareTokenMutationOptions(options));
+};
+
+/**
+ * Token-gated public endpoint. Validates the share token, then returns the receipt's verification result. The prompt is redacted when ?redact=1 is passed. The response body omits the raw prompt/response when redacted. Returns 401 when the token is missing, expired, or invalid.
+
+ * @summary Public receipt verification via share token (no login required)
+ */
+export const getGetPublicVerificationUrl = (
+  id: string,
+  params: GetPublicVerificationParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/verify/${id}?${stringifiedParams}`
+    : `/api/verify/${id}`;
+};
+
+export const getPublicVerification = async (
+  id: string,
+  params: GetPublicVerificationParams,
+  options?: RequestInit,
+): Promise<PublicVerificationResult> => {
+  return customFetch<PublicVerificationResult>(
+    getGetPublicVerificationUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetPublicVerificationQueryKey = (
+  id: string,
+  params?: GetPublicVerificationParams,
+) => {
+  return [`/api/verify/${id}`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetPublicVerificationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPublicVerification>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  params: GetPublicVerificationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPublicVerification>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPublicVerificationQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPublicVerification>>
+  > = ({ signal }) =>
+    getPublicVerification(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPublicVerification>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPublicVerificationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPublicVerification>>
+>;
+export type GetPublicVerificationQueryError = ErrorType<void>;
+
+/**
+ * @summary Public receipt verification via share token (no login required)
+ */
+
+export function useGetPublicVerification<
+  TData = Awaited<ReturnType<typeof getPublicVerification>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  params: GetPublicVerificationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPublicVerification>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPublicVerificationQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Walks all of the authenticated user's receipts oldest-first, re-derives each hash, and checks that each receipt's prevHash equals the preceding receipt's chainHash. Returns a health summary: total receipts, count of valid receipts, the first receipt ID that failed (if any), and elapsed time. Capped at CHAIN_HEALTH_ROW_CAP rows (default 50 000) to prevent abuse on very long chains.
+
+ * @summary Re-verify every receipt in the authenticated user's chain
+ */
+export const getGetChainHealthUrl = () => {
+  return `/api/chain/health`;
+};
+
+export const getChainHealth = async (
+  options?: RequestInit,
+): Promise<ChainHealthResult> => {
+  return customFetch<ChainHealthResult>(getGetChainHealthUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetChainHealthQueryKey = () => {
+  return [`/api/chain/health`] as const;
+};
+
+export const getGetChainHealthQueryOptions = <
+  TData = Awaited<ReturnType<typeof getChainHealth>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getChainHealth>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetChainHealthQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getChainHealth>>> = ({
+    signal,
+  }) => getChainHealth({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getChainHealth>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetChainHealthQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getChainHealth>>
+>;
+export type GetChainHealthQueryError = ErrorType<void>;
+
+/**
+ * @summary Re-verify every receipt in the authenticated user's chain
+ */
+
+export function useGetChainHealth<
+  TData = Awaited<ReturnType<typeof getChainHealth>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getChainHealth>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetChainHealthQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

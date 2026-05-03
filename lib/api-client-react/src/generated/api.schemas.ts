@@ -286,6 +286,69 @@ export interface AuditChainStatus {
   verifiedAt: string;
 }
 
+export interface ShareTokenResult {
+  /** Raw share token to embed in the public verification URL. */
+  token: string;
+  /** Full public URL for sharing (includes token in query string). */
+  verifyUrl: string;
+  /** ISO-8601 timestamp when this token expires (default 7 days from now). */
+  expiresAt: string;
+}
+
+export type PublicVerificationResultPolicyStatus =
+  (typeof PublicVerificationResultPolicyStatus)[keyof typeof PublicVerificationResultPolicyStatus];
+
+export const PublicVerificationResultPolicyStatus = {
+  pass: "pass",
+  fail: "fail",
+  pending: "pending",
+  error: "error",
+} as const;
+
+/**
+ * Verification result returned from the public (token-gated) verify endpoint. Does not require a logged-in session. Prompt and response are present unless the issuer requested redaction via ?redact=1.
+
+ */
+export interface PublicVerificationResult {
+  id: string;
+  model: string;
+  createdAt: string;
+  /** Full prompt text, or null when the issuer requested redaction. */
+  prompt?: string | null;
+  /** Full response text, or null when the issuer requested redaction. */
+  response?: string | null;
+  /** True when prompt and response have been omitted at the issuer's request. */
+  redacted: boolean;
+  promptHash: string;
+  responseHash: string;
+  chainHash: string;
+  prevHash?: string | null;
+  policyStatus: PublicVerificationResultPolicyStatus;
+  valid: boolean;
+  promptHashMatch: boolean;
+  responseHashMatch: boolean;
+  chainIntact: boolean;
+  details: string;
+  checkedAt: string;
+}
+
+/**
+ * Result of a full chain re-verification walk. Every receipt is checked oldest-first: hashes are re-derived and each receipt's prevHash must equal the preceding receipt's chainHash. Capped at CHAIN_HEALTH_ROW_CAP rows (default 50 000) to guard against unbounded scans.
+
+ */
+export interface ChainHealthResult {
+  /** Number of receipts examined (may be less than chain length when capped) */
+  total: number;
+  /** Number of receipts that passed all hash checks */
+  valid: number;
+  /** ID of the first receipt that failed verification, or null if all passed */
+  firstFailedId: string | null;
+  /** True when the walk was cut short by the row cap */
+  capped: boolean;
+  /** Wall-clock milliseconds the verification walk took */
+  elapsedMs: number;
+}
+
 export type ChainSummaryEntriesItem = {
   id: string;
   chainHash: string;
@@ -351,4 +414,20 @@ export const ListInteractionsPolicyStatus = {
   fail: "fail",
   pending: "pending",
   error: "error",
+} as const;
+
+export type GetPublicVerificationParams = {
+  token: string;
+  /**
+   * Pass "1" to redact the prompt and response from the result.
+   */
+  redact?: GetPublicVerificationRedact;
+};
+
+export type GetPublicVerificationRedact =
+  (typeof GetPublicVerificationRedact)[keyof typeof GetPublicVerificationRedact];
+
+export const GetPublicVerificationRedact = {
+  NUMBER_0: "0",
+  NUMBER_1: "1",
 } as const;

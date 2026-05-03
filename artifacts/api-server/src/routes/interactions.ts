@@ -58,8 +58,9 @@
  */
 import { Router, type IRouter } from "express";
 import { rateLimit } from "express-rate-limit";
-import { db, interactionsTable, activityLogTable, policiesTable } from "@workspace/db";
-import { eq, desc, count, and, sql } from "drizzle-orm";
+import { db, interactionsTable, activityLogTable, policiesTable, shareTokensTable } from "@workspace/db";
+import { eq, desc, asc, count, and, sql } from "drizzle-orm";
+import { randomBytes, createHash } from "crypto";
 import {
   ListInteractionsQueryParams,
   CreateInteractionBody,
@@ -72,6 +73,35 @@ import { generateId } from "../lib/id";
 import { evalPolicyRule } from "../lib/policy-eval";
 import { insertActivityLog } from "../lib/activity-log";
 import { requireAuth } from "../middlewares/requireAuth";
+
+/**
+ * SHARE_TOKEN_EXPIRY_DAYS — configurable TTL for public share tokens.
+ * Default: 7 days.
+ */
+const SHARE_TOKEN_EXPIRY_DAYS = Number(process.env["SHARE_TOKEN_EXPIRY_DAYS"] ?? 7);
+
+/**
+ * CHAIN_HEALTH_ROW_CAP — max receipts examined by GET /chain/health per call.
+ * Prevents unbounded scans on very long chains. Default: 50 000.
+ */
+const CHAIN_HEALTH_ROW_CAP = Number(process.env["CHAIN_HEALTH_ROW_CAP"] ?? 50_000);
+
+/**
+ * CHAIN_VERIFY_DEPTH_LIMIT — max depth of the recursive ancestry CTE in
+ * GET /interactions/:id/verify. Chains deeper than this return 422.
+ * Default: 10 000.
+ */
+const CHAIN_VERIFY_DEPTH_LIMIT = Number(process.env["CHAIN_VERIFY_DEPTH_LIMIT"] ?? 10_000);
+
+/**
+ * Hash a raw share token for safe DB storage (prevents leaking usable tokens
+ * via a DB dump). We use SHA-256(rawToken) — the token itself is a 32-byte
+ * cryptographically random value, so plain SHA-256 is sufficient; HMAC is not
+ * required because the input is already high-entropy.
+ */
+function hashShareToken(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex");
+}
 
 /** requireAuth guarantees req.user is set; this helper narrows the type. */
 function userId(req: Express.Request): string {
@@ -431,26 +461,41 @@ router.get("/interactions/:id/verify", requireAuth, async (req, res) => {
   //    interaction.userId so the ancestry walk stays within the owner's chain and
   //    cross-user receipts with colliding hashes don't pollute the lineage or
   //    trigger false-positive fork detections.
-  const lineageForkResult = await db.execute<{ fork_in_lineage: string }>(sql`
+  //
+  //    Depth limit: the CTE tracks a `depth` counter and stops recursing when
+  //    depth >= CHAIN_VERIFY_DEPTH_LIMIT (default 10 000). If the result set
+  //    contains any row at the depth limit AND that row still has a prev_hash,
+  //    the walk was truncated — return 422 to signal the caller.
+  const lineageForkResult = await db.execute<{ fork_in_lineage: string; max_depth: string }>(sql`
     WITH RECURSIVE ancestry AS (
-      SELECT id, chain_hash, prev_hash
+      SELECT id, chain_hash, prev_hash, 0 AS depth
       FROM interactions
       WHERE id = ${id}
       UNION ALL
-      SELECT i.id, i.chain_hash, i.prev_hash
+      SELECT i.id, i.chain_hash, i.prev_hash, a.depth + 1
       FROM interactions i
       JOIN ancestry a ON i.chain_hash = a.prev_hash
       WHERE a.prev_hash IS NOT NULL
         AND i.user_id = ${interaction.userId}
+        AND a.depth < ${CHAIN_VERIFY_DEPTH_LIMIT}
     )
-    SELECT COUNT(*) AS fork_in_lineage
-    FROM ancestry a
-    WHERE (
-      SELECT COUNT(*) FROM interactions
-      WHERE prev_hash = a.chain_hash
-        AND user_id = ${interaction.userId}
-    ) > 1
+    SELECT
+      COUNT(*) FILTER (WHERE (
+        SELECT COUNT(*) FROM interactions
+        WHERE prev_hash = ancestry.chain_hash
+          AND user_id = ${interaction.userId}
+      ) > 1) AS fork_in_lineage,
+      MAX(depth) AS max_depth
+    FROM ancestry
   `);
+
+  const maxDepth = Number((lineageForkResult.rows[0] as { fork_in_lineage: string; max_depth: string } | undefined)?.max_depth ?? 0);
+  if (maxDepth >= CHAIN_VERIFY_DEPTH_LIMIT) {
+    res.status(422).json({
+      error: `Chain ancestry exceeds the depth limit of ${CHAIN_VERIFY_DEPTH_LIMIT}. Use the chain health endpoint for bulk verification of very long chains.`,
+    });
+    return;
+  }
   const lineageForked = Number((lineageForkResult.rows[0] as { fork_in_lineage: string } | undefined)?.fork_in_lineage ?? 0) > 0;
 
   // 5. Per-user genesis uniqueness: a valid per-user chain has exactly one genesis entry
@@ -483,6 +528,215 @@ router.get("/interactions/:id/verify", requireAuth, async (req, res) => {
 
   res.json({
     id,
+    valid,
+    promptHashMatch,
+    responseHashMatch,
+    chainIntact,
+    details: valid
+      ? "All cryptographic checks passed. Receipt is authentic and chain is intact."
+      : `Verification failed: ${failReasons.join("; ")}`,
+    checkedAt: new Date().toISOString(),
+  });
+});
+
+/**
+ * POST /interactions/:id/share-token
+ *
+ * Authenticated, owner-only. Generates a short-lived random share token that
+ * allows anyone (no account required) to view this receipt's verification result
+ * via GET /verify/:id?token=... .
+ *
+ * The raw token is returned to the caller; the DB stores only SHA-256(rawToken).
+ * Expiry defaults to SHARE_TOKEN_EXPIRY_DAYS (7) days from now.
+ */
+router.post("/interactions/:id/share-token", requireAuth, async (req, res) => {
+  const { id } = GetInteractionParams.parse(req.params);
+  const uid = userId(req);
+
+  const [interaction] = await db
+    .select({ id: interactionsTable.id, userId: interactionsTable.userId })
+    .from(interactionsTable)
+    .where(eq(interactionsTable.id, id));
+
+  if (!interaction) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  if (interaction.userId !== uid) {
+    res.status(403).json({ error: "Forbidden: this receipt belongs to another user" });
+    return;
+  }
+
+  const rawToken = randomBytes(32).toString("hex");
+  const tokenHash = hashShareToken(rawToken);
+  const tokenId = generateId();
+  const expiresAt = new Date(Date.now() + SHARE_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+
+  await db.insert(shareTokensTable).values({
+    id: tokenId,
+    interactionId: id,
+    userId: uid,
+    tokenHash,
+    expiresAt,
+  });
+
+  // Build the canonical public URL. The /api prefix is the API base path; the
+  // public verify page is served by the web app at /verify/:id, not /api/verify/:id.
+  // We return the raw token so the client can construct or display the URL.
+  const origin = `${req.protocol}://${req.get("host") ?? ""}`;
+  // Strip /api suffix that's present when accessed through the proxy
+  const base = origin.replace(/\/api\/?$/, "");
+  const verifyUrl = `${base}/verify/${id}?token=${rawToken}`;
+
+  res.status(201).json({
+    token: rawToken,
+    verifyUrl,
+    expiresAt: expiresAt.toISOString(),
+  });
+});
+
+/**
+ * GET /verify/:id?token=TOKEN
+ *
+ * Public endpoint — no auth required. Validates the share token, then runs the
+ * same verification checks as the authenticated /interactions/:id/verify endpoint.
+ * Prompt and response are omitted when ?redact=1 is passed.
+ *
+ * Security:
+ *   - Token is looked up by SHA-256 hash to prevent timing leaks from partial matches.
+ *   - Expired tokens return 401 (not 403) to avoid leaking existence of the receipt.
+ *   - The interaction lookup is scoped to the userId stored on the token row so a
+ *     token minted for receipt A cannot be reused to access receipt B.
+ */
+router.get("/verify/:id", async (req, res) => {
+  const { id } = GetInteractionParams.parse(req.params);
+  const rawToken = typeof req.query["token"] === "string" ? req.query["token"] : null;
+  const redact = req.query["redact"] === "1";
+
+  if (!rawToken) {
+    res.status(401).json({ error: "Missing share token. Pass ?token=TOKEN in the URL." });
+    return;
+  }
+
+  const tokenHash = hashShareToken(rawToken);
+  const now = new Date();
+
+  const [tokenRow] = await db
+    .select()
+    .from(shareTokensTable)
+    .where(
+      and(
+        eq(shareTokensTable.interactionId, id),
+        eq(shareTokensTable.tokenHash, tokenHash),
+      ),
+    )
+    .limit(1);
+
+  if (!tokenRow || tokenRow.expiresAt < now) {
+    res.status(401).json({ error: "Share token is invalid or has expired." });
+    return;
+  }
+
+  const [interaction] = await db
+    .select()
+    .from(interactionsTable)
+    .where(
+      and(
+        eq(interactionsTable.id, id),
+        eq(interactionsTable.userId, tokenRow.userId),
+      ),
+    );
+
+  if (!interaction) {
+    res.status(404).json({ error: "Receipt not found." });
+    return;
+  }
+
+  // Run the same verification checks as the authenticated endpoint
+  const promptHashMatch = hashPrompt(interaction.prompt) === interaction.promptHash;
+  const responseHashMatch = hashResponse(interaction.response) === interaction.responseHash;
+  const expectedChainHash = buildChainHash(interaction.promptHash, interaction.responseHash, interaction.prevHash ?? null);
+  const chainHashSelfConsistent = expectedChainHash === interaction.chainHash;
+
+  let predecessorExists = true;
+  if (interaction.prevHash !== null) {
+    const [pred] = await db
+      .select({ id: interactionsTable.id })
+      .from(interactionsTable)
+      .where(
+        and(
+          eq(interactionsTable.chainHash, interaction.prevHash),
+          eq(interactionsTable.userId, interaction.userId),
+        ),
+      )
+      .limit(1);
+    predecessorExists = pred !== undefined;
+  }
+
+  // Depth-limited recursive CTE for fork detection
+  const lineageForkResult = await db.execute<{ fork_in_lineage: string; max_depth: string }>(sql`
+    WITH RECURSIVE ancestry AS (
+      SELECT id, chain_hash, prev_hash, 0 AS depth
+      FROM interactions
+      WHERE id = ${id}
+      UNION ALL
+      SELECT i.id, i.chain_hash, i.prev_hash, a.depth + 1
+      FROM interactions i
+      JOIN ancestry a ON i.chain_hash = a.prev_hash
+      WHERE a.prev_hash IS NOT NULL
+        AND i.user_id = ${interaction.userId}
+        AND a.depth < ${CHAIN_VERIFY_DEPTH_LIMIT}
+    )
+    SELECT
+      COUNT(*) FILTER (WHERE (
+        SELECT COUNT(*) FROM interactions
+        WHERE prev_hash = ancestry.chain_hash
+          AND user_id = ${interaction.userId}
+      ) > 1) AS fork_in_lineage,
+      MAX(depth) AS max_depth
+    FROM ancestry
+  `);
+
+  const maxDepth = Number((lineageForkResult.rows[0] as { fork_in_lineage: string; max_depth: string } | undefined)?.max_depth ?? 0);
+  if (maxDepth >= CHAIN_VERIFY_DEPTH_LIMIT) {
+    res.status(422).json({
+      error: `Chain ancestry exceeds the depth limit of ${CHAIN_VERIFY_DEPTH_LIMIT}.`,
+    });
+    return;
+  }
+
+  const lineageForked = Number((lineageForkResult.rows[0] as { fork_in_lineage: string } | undefined)?.fork_in_lineage ?? 0) > 0;
+
+  const genesisResult = await db.execute<{ genesis_count: string }>(sql`
+    SELECT COUNT(*) AS genesis_count FROM interactions
+    WHERE prev_hash IS NULL AND user_id = ${interaction.userId}
+  `);
+  const genesisCount = Number((genesisResult.rows[0] as { genesis_count: string } | undefined)?.genesis_count ?? 0);
+  const multipleGenesisNodes = genesisCount > 1;
+
+  const chainIntact = chainHashSelfConsistent && predecessorExists && !lineageForked && !multipleGenesisNodes;
+  const valid = promptHashMatch && responseHashMatch && chainIntact;
+
+  const failReasons: string[] = [];
+  if (!promptHashMatch) failReasons.push("prompt hash mismatch");
+  if (!responseHashMatch) failReasons.push("response hash mismatch");
+  if (!chainHashSelfConsistent) failReasons.push("chain hash mismatch");
+  if (!predecessorExists) failReasons.push("predecessor receipt not found (orphaned)");
+  if (lineageForked) failReasons.push("fork detected in ancestry");
+  if (multipleGenesisNodes) failReasons.push("multiple genesis entries");
+
+  res.json({
+    id,
+    model: interaction.model,
+    createdAt: interaction.createdAt.toISOString(),
+    prompt: redact ? null : interaction.prompt,
+    response: redact ? null : interaction.response,
+    redacted: redact,
+    promptHash: interaction.promptHash,
+    responseHash: interaction.responseHash,
+    chainHash: interaction.chainHash,
+    prevHash: interaction.prevHash ?? null,
+    policyStatus: interaction.policyStatus,
     valid,
     promptHashMatch,
     responseHashMatch,
@@ -583,6 +837,77 @@ router.post("/interactions/:id/replay", requireAuth, async (req, res) => {
     semanticMatch,
     replayedAt: new Date().toISOString(),
     newReceiptId: newId,
+  });
+});
+
+/**
+ * GET /chain/health
+ *
+ * Authenticated. Walks ALL of the user's receipts in chronological order
+ * (oldest-first), re-derives each hash, and verifies that each receipt's
+ * prevHash equals the preceding receipt's chainHash. Returns a summary:
+ *   total      — number of receipts examined
+ *   valid      — number that passed all hash checks
+ *   firstFailedId — ID of the first failing receipt (null if all pass)
+ *   capped     — true when the scan stopped at CHAIN_HEALTH_ROW_CAP
+ *   elapsedMs  — wall-clock time the scan took
+ *
+ * Resource exhaustion protection:
+ *   - Capped at CHAIN_HEALTH_ROW_CAP rows (default 50 000).
+ *   - Returns capped:true when the limit is hit so the caller knows the result
+ *     is not a full chain scan.
+ */
+router.get("/chain/health", requireAuth, async (req, res) => {
+  const uid = userId(req);
+  const startMs = Date.now();
+
+  const rows = await db
+    .select({
+      id: interactionsTable.id,
+      prompt: interactionsTable.prompt,
+      response: interactionsTable.response,
+      promptHash: interactionsTable.promptHash,
+      responseHash: interactionsTable.responseHash,
+      prevHash: interactionsTable.prevHash,
+      chainHash: interactionsTable.chainHash,
+    })
+    .from(interactionsTable)
+    .where(eq(interactionsTable.userId, uid))
+    .orderBy(asc(interactionsTable.createdAt))
+    .limit(CHAIN_HEALTH_ROW_CAP + 1); // fetch one extra to detect capping
+
+  const capped = rows.length > CHAIN_HEALTH_ROW_CAP;
+  const receipts = capped ? rows.slice(0, CHAIN_HEALTH_ROW_CAP) : rows;
+
+  let validCount = 0;
+  let firstFailedId: string | null = null;
+  let prevChainHash: string | null = null; // chain hash of the previous receipt in the walk
+
+  for (const row of receipts) {
+    const promptOk = hashPrompt(row.prompt) === row.promptHash;
+    const responseOk = hashResponse(row.response) === row.responseHash;
+    const selfOk = buildChainHash(row.promptHash, row.responseHash, row.prevHash ?? null) === row.chainHash;
+    // Linkage check: if this is not the genesis receipt, its prevHash must equal
+    // the chainHash of the immediately preceding receipt in the walk order.
+    const linkageOk = prevChainHash === null
+      ? row.prevHash === null   // first receipt must be genesis
+      : row.prevHash === prevChainHash;
+
+    if (promptOk && responseOk && selfOk && linkageOk) {
+      validCount++;
+    } else if (firstFailedId === null) {
+      firstFailedId = row.id;
+    }
+
+    prevChainHash = row.chainHash;
+  }
+
+  res.json({
+    total: receipts.length,
+    valid: validCount,
+    firstFailedId,
+    capped,
+    elapsedMs: Date.now() - startMs,
   });
 });
 
