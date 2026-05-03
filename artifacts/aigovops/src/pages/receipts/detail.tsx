@@ -2,11 +2,12 @@ import { useParams } from "wouter";
 import { useGetInteraction, useVerifyInteraction, useReplayInteraction, getGetInteractionQueryKey, getGetStatsQueryKey, getGetChainQueryKey, getListInteractionsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Shield, CheckCircle, XCircle, RefreshCw, Hash, ChevronLeft, Loader2, AlertTriangle } from "lucide-react";
+import { Shield, CheckCircle, XCircle, RefreshCw, Hash, ChevronLeft, Loader2, AlertTriangle, Award } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
+import { ShareReceipt } from "@/components/ShareReceipt";
 
 function HashRow({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
@@ -211,13 +212,20 @@ export default function ReceiptDetail() {
         </div>
       )}
 
-      <div className="flex gap-3">
+      <ShareReceipt interaction={interaction} />
+
+      <div className="flex gap-3 flex-wrap">
         <Button variant="outline" onClick={handleVerify} disabled={verifying} className="gap-2 font-semibold" data-testid="button-verify-receipt">
           {verifying ? <><Loader2 className="w-4 h-4 animate-spin" />Verifying…</> : <><CheckCircle className="w-4 h-4" />Verify Chain</>}
         </Button>
         <Button onClick={handleReplay} disabled={replaying} className="gap-2 font-semibold bg-sky-600 hover:bg-sky-700 text-white" data-testid="button-replay-receipt">
           {replaying ? <><Loader2 className="w-4 h-4 animate-spin" />Replaying…</> : <><RefreshCw className="w-4 h-4" />Replay</>}
         </Button>
+        <Link href="/certificate">
+          <Button variant="outline" className="gap-2 font-semibold text-primary border-primary/30 hover:bg-primary/5" data-testid="button-view-certificate">
+            <Award className="w-4 h-4" />View Certificate
+          </Button>
+        </Link>
       </div>
     </div>
   );

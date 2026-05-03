@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useListInteractions, getListInteractionsQueryKey } from "@workspace/api-client-react";
 import { Link } from "wouter";
-import { Clock, Plus, CheckCircle, XCircle, AlertCircle, ChevronRight } from "lucide-react";
+import { Clock, Plus, CheckCircle, XCircle, AlertCircle, ChevronRight, Award } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -71,11 +71,18 @@ export default function SimpleHistory() {
             </p>
           )}
         </div>
-        <Link href="/record">
-          <Button className="rounded-xl gap-2" data-testid="simple-new-recording">
-            <Plus className="w-4 h-4" /> New
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/certificate">
+            <Button variant="outline" size="sm" className="rounded-xl gap-1.5 font-semibold text-primary border-primary/30 hover:bg-primary/5" data-testid="simple-history-certificate-btn">
+              <Award className="w-3.5 h-3.5" />Certificate
+            </Button>
+          </Link>
+          <Link href="/record">
+            <Button className="rounded-xl gap-2" data-testid="simple-new-recording">
+              <Plus className="w-4 h-4" /> New
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* List */}

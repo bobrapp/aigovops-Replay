@@ -3,7 +3,7 @@ import {
   Shield, FileText, Link2, ShieldAlert, CheckCircle,
   Database, Search, Menu, X, BookOpen, Zap, Bot,
   Mic, Clock, Gauge, ChevronRight, ChevronDown, ChevronUp,
-  Heart, ExternalLink, LogIn, GraduationCap
+  Heart, ExternalLink, LogIn, GraduationCap, Award
 } from "lucide-react";
 import { ReactNode, useState } from "react";
 import { useMode } from "@/context/mode";
@@ -18,6 +18,7 @@ const expertNav = [
   { label: "Agents", href: "/agents", icon: Bot, group: "audit" },
   { label: "Verify", href: "/verify", icon: Search, group: "audit" },
   { label: "Chain", href: "/chain", icon: Link2, group: "audit" },
+  { label: "Certificate", href: "/certificate", icon: Award, group: "audit" },
   { label: "Policies", href: "/policies", icon: ShieldAlert, group: "policy" },
   { label: "Open Spec", href: "/spec", icon: BookOpen, group: "policy" },
 ];
@@ -29,6 +30,7 @@ const simpleNav = [
   { label: "My Recordings", href: "/history", icon: Clock },
   { label: "Check a Recording", href: "/check", icon: Search },
   { label: "Try the Demo", href: "/demo", icon: Zap },
+  { label: "Certificate", href: "/certificate", icon: Award },
 ];
 
 const expertMobileNav = [

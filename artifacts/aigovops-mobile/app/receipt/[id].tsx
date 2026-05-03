@@ -9,6 +9,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -60,6 +61,24 @@ export default function ReceiptDetailScreen() {
     setVerifying(false);
   }
 
+  async function handleShare() {
+    if (!receipt) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const message =
+      `AIGovOps Receipt — ${receipt.model}\n` +
+      `═══════════════════════════════\n` +
+      `Created: ${new Date(receipt.createdAt).toLocaleString()}\n` +
+      `Status: ${receipt.policyStatus.toUpperCase()}\n\n` +
+      `Prompt: ${receipt.prompt.slice(0, 200)}${receipt.prompt.length > 200 ? "…" : ""}\n\n` +
+      `Chain Hash: ${receipt.chainHash ?? "N/A"}\n\n` +
+      `Verified by AIGovOps Foundation · aigovopsfoundation.org`;
+    try {
+      await Share.share({ message, title: "AIGovOps Receipt" });
+    } catch {
+      // user cancelled or share not available
+    }
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.navBar, { paddingTop: topInset + 8, borderBottomColor: colors.border, backgroundColor: colors.background }]}>
@@ -67,7 +86,9 @@ export default function ReceiptDetailScreen() {
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </Pressable>
         <Text style={[styles.navTitle, { color: colors.foreground }]}>Receipt</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={handleShare} style={styles.backBtn} disabled={!receipt}>
+          <Ionicons name="share-outline" size={22} color={receipt ? colors.primary : colors.mutedForeground} />
+        </Pressable>
       </View>
 
       {isLoading ? (
@@ -175,6 +196,18 @@ export default function ReceiptDetailScreen() {
               </>
             )}
           </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionBtn,
+              styles.actionBtnOutline,
+              { borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.75 : 1 }
+            ]}
+            onPress={handleShare}
+          >
+            <Ionicons name="share-outline" size={18} color={colors.primary} />
+            <Text style={[styles.actionBtnText, { color: colors.primary }]}>Share Receipt</Text>
+          </Pressable>
         </ScrollView>
       )}
     </View>
@@ -258,5 +291,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     fontFamily: "Inter_600SemiBold",
+  },
+  actionBtnOutline: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    marginTop: 10,
   },
 });

@@ -11,6 +11,7 @@ import { useAuth } from "@workspace/replit-auth-web";
 import { Shield, Gauge, ChevronRight, ArrowRight } from "lucide-react";
 import { useState } from "react";
 import TutorialPage from "./pages/tutorial";
+import CertificatePage from "./pages/certificate";
 
 // Expert pages
 import Dashboard from "./pages/dashboard";
@@ -241,6 +242,7 @@ function Router() {
         <Route path="/verify" component={VerifyReceipt} />
         <Route path="/spec" component={SpecPage} />
         <Route path="/tutorial" component={TutorialPage} />
+        <Route path="/certificate" component={CertificatePage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
