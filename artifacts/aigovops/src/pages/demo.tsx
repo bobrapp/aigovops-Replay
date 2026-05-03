@@ -304,6 +304,7 @@ export default function DemoPage() {
     if (!livePrompt.trim()) return;
     setStep("generating");
     setError(null);
+    setNeedsAuth(false);
     setLiveResponse("");
     try {
       const res = await fetch("/api/ai/generate", {
@@ -312,6 +313,11 @@ export default function DemoPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: livePrompt }),
       });
+      if (res.status === 401) {
+        setNeedsAuth(true);
+        setStep("choose");
+        return;
+      }
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setLiveResponse(data.response);

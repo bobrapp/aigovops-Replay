@@ -1,16 +1,40 @@
 import { Router, type IRouter, type Request, type Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { GoogleGenAI } from "@google/genai";
+import { requireAuth } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
 
 const MODEL = "gemini-2.5-flash";
 
 /**
+ * Stricter per-IP rate limiter for AI generation.
+ *
+ * The global limiter (app.ts) allows 300 req/min/IP across all routes.
+ * Each call to this endpoint triggers an external Gemini API request with
+ * up to 8,192 output tokens, making it orders of magnitude more expensive
+ * than a typical database read. 20 req/min is generous for legitimate
+ * interactive use while meaningfully limiting quota-exhaustion abuse.
+ */
+const aiGenerateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Too many AI generation requests — please slow down." },
+});
+
+/**
  * POST /api/ai/generate
  * Sends a prompt to Gemini Flash and returns the response text.
  * Used to create receipts from real AI interactions.
+ *
+ * Security: requireAuth ensures only authenticated users can consume the
+ * server-side Gemini integration. Without this guard, any unauthenticated
+ * caller could exhaust the application's AI API quota. The aiGenerateLimiter
+ * provides a tighter per-IP cap on top of the global 300 req/min limiter.
  */
-router.post("/ai/generate", async (req: Request, res: Response): Promise<void> => {
+router.post("/ai/generate", requireAuth, aiGenerateLimiter, async (req: Request, res: Response): Promise<void> => {
   const { prompt } = req.body as { prompt?: unknown };
 
   if (typeof prompt !== "string" || prompt.trim().length === 0) {
