@@ -2,10 +2,11 @@
 -- All statements use CREATE … IF NOT EXISTS / DO $$ … IF NOT EXISTS so this
 -- file is safe to replay on a database where some objects already exist.
 --
--- NOTE: activity_log is created WITHOUT the hash-chain columns here so that
--- 0001_add_activity_log_hash_chain.sql is the single authoritative migration
--- for adding prev_log_hash / log_hash. This keeps the upgrade path for
--- existing databases identical to the fresh-install path.
+-- activity_log includes the hash-chain columns (seq, prev_log_hash, log_hash)
+-- so that fresh installs start with the full schema. The additive ALTER migration
+-- 0001_add_activity_log_hash_chain.sql uses ADD COLUMN IF NOT EXISTS, making it
+-- a no-op on fresh installs and an idempotent upgrade for existing databases.
+-- Both paths end with an identical final schema.
 DO $$ BEGIN
   CREATE TYPE "public"."activity_type" AS ENUM('created', 'replayed', 'verified', 'policy_check');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
