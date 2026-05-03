@@ -18,6 +18,7 @@ import {
   ISSUER_URL,
   type SessionData,
 } from "../lib/auth";
+import { logger } from "../lib/logger";
 
 const OIDC_COOKIE_TTL = 10 * 60 * 1000;
 
@@ -64,6 +65,10 @@ function getCanonicalOrigin(): string {
   if (devDomain) return `https://${devDomain}`;
 
   // Local fallback — only reachable in a developer's own environment.
+  // Security note: this value is never derived from request headers (Host,
+  // X-Forwarded-Host, X-Forwarded-Proto). Those headers are attacker-controlled
+  // in proxy deployments and must not be trusted for OIDC redirect URI construction.
+  logger.warn("getCanonicalOrigin: no APP_ORIGIN / REPLIT_DOMAINS / REPLIT_DEV_DOMAIN set — falling back to localhost");
   return "http://localhost:3000";
 }
 

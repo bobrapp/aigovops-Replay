@@ -150,6 +150,11 @@ app.use(
     },
   }),
 );
+// Security: origin must be an explicit allowlist, never `true` (which reflects any caller-supplied
+// Origin header back as Access-Control-Allow-Origin). Reflecting arbitrary origins combined with
+// credentials:true allows any website — including attacker-controlled same-site sibling subdomains —
+// to make credentialed cross-origin requests and read protected API responses.
+// When no origins are configured (bare local dev) we disable CORS entirely rather than open it up.
 app.use(
   cors({
     credentials: true,

@@ -91,15 +91,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Persist or clear the session token in SecureStore (platform Keychain/Keystore).
-  // SecureStore encrypts values at rest — unlike AsyncStorage which is plaintext.
+  // Persist or clear the session token using platform-backed secure storage.
+  //
+  // Security rationale: AsyncStorage is an unencrypted key-value store readable
+  // by anyone with access to the app sandbox (iOS backups, ADB extraction on
+  // Android, rooted/jailbroken devices, or local malware). A session token stored
+  // there can be extracted and replayed against the API for the full session TTL
+  // (seven days). expo-secure-store writes to iOS Keychain / Android Keystore,
+  // both of which use hardware-backed encryption. This prevents offline extraction
+  // even on compromised devices.
   const persistToken = useCallback(async (sid: string | null) => {
     setToken(sid);
     setAuthTokenGetter(() => sid);
-    if (sid) {
-      await SecureStore.setItemAsync(STORAGE_KEY, sid);
-    } else {
-      await SecureStore.deleteItemAsync(STORAGE_KEY);
+    try {
+      if (sid) {
+        await SecureStore.setItemAsync(STORAGE_KEY, sid);
+      } else {
+        await SecureStore.deleteItemAsync(STORAGE_KEY);
+      }
+    } catch {
+      // SecureStore failures are non-fatal for the in-memory session; the token
+      // simply won't survive an app restart. Do not fall back to AsyncStorage.
     }
   }, []);
 
@@ -108,20 +120,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthTokenGetter(() => null);
 
     // Load any previously stored session from SecureStore on startup.
-    SecureStore.getItemAsync(STORAGE_KEY).then(async (stored) => {
-      if (stored) {
-        const u = await fetchUser(stored);
-        if (u) {
-          setToken(stored);
-          setAuthTokenGetter(() => stored);
-          setUser(u);
-        } else {
-          // Stored token is invalid or expired — remove it.
-          await SecureStore.deleteItemAsync(STORAGE_KEY);
+    // SecureStore (Keychain/Keystore) is used here intentionally — not AsyncStorage.
+    // See persistToken above for the security rationale.
+    SecureStore.getItemAsync(STORAGE_KEY)
+      .then(async (stored) => {
+        if (stored) {
+          const u = await fetchUser(stored);
+          if (u) {
+            setToken(stored);
+            setAuthTokenGetter(() => stored);
+            setUser(u);
+          } else {
+            // Stored token is invalid or expired — remove it.
+            await SecureStore.deleteItemAsync(STORAGE_KEY).catch(() => {});
+          }
         }
-      }
-      setIsLoading(false);
-    });
+      })
+      .catch(() => {
+        // If SecureStore is unavailable (e.g. first boot before device unlock on
+        // some Android configurations), treat as no stored session and continue.
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   }, []);
 
   useEffect(() => {
