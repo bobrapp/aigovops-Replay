@@ -82,6 +82,8 @@ export default function StatsScreen() {
           },
         ]}
         onPress={() => {}}
+        accessibilityLabel="Learn how AIGovOps REPLAY - BLACKBOX works"
+        accessibilityRole="button"
       >
         <View style={styles.tutorialRow}>
           <View style={[styles.tutorialIcon, { backgroundColor: "rgba(16,185,129,0.15)" }]}>

@@ -51,6 +51,8 @@ export default function FeedScreen() {
           <Pressable
             style={[styles.addBtn, { backgroundColor: colors.primary }]}
             onPress={() => router.push("/new-receipt" as any)}
+            accessibilityLabel="Add new receipt"
+            accessibilityRole="button"
           >
             <Ionicons name="add" size={22} color={colors.primaryForeground} />
           </Pressable>
@@ -65,7 +67,12 @@ export default function FeedScreen() {
             onChangeText={setSearch}
           />
           {search.length > 0 && (
-            <Pressable onPress={() => setSearch("")}>
+            <Pressable
+              onPress={() => setSearch("")}
+              accessibilityLabel="Clear search"
+              accessibilityRole="button"
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
               <Ionicons name="close-circle" size={16} color={colors.mutedForeground} />
             </Pressable>
           )}
@@ -82,7 +89,12 @@ export default function FeedScreen() {
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
             Could not load receipts
           </Text>
-          <Pressable onPress={() => refetch()} style={[styles.retryBtn, { borderColor: colors.border }]}>
+          <Pressable
+            onPress={() => refetch()}
+            style={[styles.retryBtn, { borderColor: colors.border }]}
+            accessibilityLabel="Retry loading receipts"
+            accessibilityRole="button"
+          >
             <Text style={{ color: colors.primary, fontFamily: "Inter_500Medium" }}>Retry</Text>
           </Pressable>
         </View>
@@ -116,6 +128,8 @@ export default function FeedScreen() {
                   <Pressable
                     style={[styles.emptyAction, { backgroundColor: colors.primary }]}
                     onPress={() => router.push("/new-receipt" as any)}
+                    accessibilityLabel="Create new receipt"
+                    accessibilityRole="button"
                   >
                     <Ionicons name="add" size={18} color="#fff" />
                     <Text style={styles.emptyActionText}>New Receipt</Text>
@@ -150,9 +164,9 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   addBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -204,8 +218,10 @@ const styles = StyleSheet.create({
   },
   retryBtn: {
     paddingHorizontal: 20,
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1,
+    minHeight: 44,
+    justifyContent: "center",
   },
 });

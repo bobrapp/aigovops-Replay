@@ -51,7 +51,12 @@ export default function NewReceiptScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.navBar, { paddingTop: topInset + 8, borderBottomColor: colors.border, backgroundColor: colors.background }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.backBtn}
+          accessibilityLabel="Close"
+          accessibilityRole="button"
+        >
           <Ionicons name="close" size={24} color={colors.primary} />
         </Pressable>
         <Text style={[styles.navTitle, { color: colors.foreground }]}>New Receipt</Text>
@@ -59,6 +64,9 @@ export default function NewReceiptScreen() {
           onPress={handleSubmit}
           disabled={isPending || !prompt.trim() || !response.trim()}
           style={({ pressed }) => [styles.saveBtn, { opacity: pressed ? 0.7 : 1 }]}
+          accessibilityLabel="Save receipt"
+          accessibilityRole="button"
+          accessibilityState={{ disabled: isPending || !prompt.trim() || !response.trim() }}
         >
           {isPending ? (
             <ActivityIndicator color={colors.primary} size="small" />
@@ -87,6 +95,9 @@ export default function NewReceiptScreen() {
                   borderColor: m === model ? colors.primary : colors.border,
                 },
               ]}
+              accessibilityLabel={`Select model ${m}`}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: m === model }}
             >
               <Text style={[styles.modelChipText, { color: m === model ? "#fff" : colors.foreground }]}>
                 {m}
@@ -138,6 +149,8 @@ export default function NewReceiptScreen() {
             <Pressable
               style={[styles.errorBtn, { backgroundColor: "#d97706" }]}
               onPress={login}
+              accessibilityLabel="Sign in again"
+              accessibilityRole="button"
             >
               <Text style={styles.errorBtnText}>Sign In</Text>
             </Pressable>
@@ -166,7 +179,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     borderBottomWidth: 1,
   },
-  backBtn: { width: 40, alignItems: "center", paddingVertical: 4 },
+  backBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   navTitle: {
     flex: 1,
     textAlign: "center",
@@ -174,7 +187,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontFamily: "Inter_600SemiBold",
   },
-  saveBtn: { width: 56, alignItems: "flex-end", paddingVertical: 4 },
+  saveBtn: { width: 56, height: 44, alignItems: "flex-end", justifyContent: "center" },
   saveBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
   fieldLabel: {
     fontSize: 11,
@@ -187,10 +200,12 @@ const styles = StyleSheet.create({
   modelScroll: { marginBottom: 4 },
   modelChip: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 0,
+    height: 36,
     borderRadius: 20,
     borderWidth: 1,
     marginRight: 8,
+    justifyContent: "center",
   },
   modelChipText: {
     fontSize: 13,

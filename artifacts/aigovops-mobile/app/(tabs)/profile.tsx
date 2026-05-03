@@ -32,6 +32,8 @@ function MenuRow({ icon, label, onPress, destructive }: MenuRowProps) {
         { borderBottomColor: colors.border, opacity: pressed ? 0.7 : 1 },
       ]}
       onPress={onPress}
+      accessibilityLabel={label}
+      accessibilityRole="button"
     >
       <Ionicons
         name={icon as any}

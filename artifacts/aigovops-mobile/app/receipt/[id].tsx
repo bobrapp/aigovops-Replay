@@ -82,11 +82,22 @@ export default function ReceiptDetailScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.navBar, { paddingTop: topInset + 8, borderBottomColor: colors.border, backgroundColor: colors.background }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.backBtn}
+          accessibilityLabel="Go back"
+          accessibilityRole="button"
+        >
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </Pressable>
         <Text style={[styles.navTitle, { color: colors.foreground }]}>Receipt</Text>
-        <Pressable onPress={handleShare} style={styles.backBtn} disabled={!receipt}>
+        <Pressable
+          onPress={handleShare}
+          style={styles.backBtn}
+          disabled={!receipt}
+          accessibilityLabel="Share receipt"
+          accessibilityRole="button"
+        >
           <Ionicons name="share-outline" size={22} color={receipt ? colors.primary : colors.mutedForeground} />
         </Pressable>
       </View>
@@ -186,6 +197,8 @@ export default function ReceiptDetailScreen() {
               { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 }
             ]}
             onPress={handleVerify}
+            accessibilityLabel="Verify receipt integrity"
+            accessibilityRole="button"
           >
             {verifying ? (
               <ActivityIndicator color="#fff" />
@@ -204,6 +217,8 @@ export default function ReceiptDetailScreen() {
               { borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.75 : 1 }
             ]}
             onPress={handleShare}
+            accessibilityLabel="Share receipt"
+            accessibilityRole="button"
           >
             <Ionicons name="share-outline" size={18} color={colors.primary} />
             <Text style={[styles.actionBtnText, { color: colors.primary }]}>Share Receipt</Text>
@@ -223,7 +238,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     borderBottomWidth: 1,
   },
-  backBtn: { width: 40, alignItems: "center", paddingVertical: 4 },
+  backBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   navTitle: {
     flex: 1,
     textAlign: "center",

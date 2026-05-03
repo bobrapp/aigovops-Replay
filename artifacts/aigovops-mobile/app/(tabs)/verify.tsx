@@ -69,7 +69,12 @@ export default function VerifyScreen() {
               onSubmitEditing={handleVerify}
             />
             {receiptId.length > 0 && (
-              <Pressable onPress={() => { setReceiptId(""); setQueryId(null); }}>
+              <Pressable
+                onPress={() => { setReceiptId(""); setQueryId(null); }}
+                accessibilityLabel="Clear receipt ID"
+                accessibilityRole="button"
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
                 <Ionicons name="close-circle" size={18} color={colors.mutedForeground} />
               </Pressable>
             )}
@@ -82,6 +87,8 @@ export default function VerifyScreen() {
             { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
           ]}
           onPress={handleVerify}
+          accessibilityLabel="Verify receipt"
+          accessibilityRole="button"
         >
           {isLoading ? (
             <ActivityIndicator color="#fff" />

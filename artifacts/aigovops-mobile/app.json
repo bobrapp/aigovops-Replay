@@ -15,7 +15,26 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.aigovops.mobile"
+      "bundleIdentifier": "com.aigovops.mobile",
+      "infoPlist": {
+        "NSPasteboardUsageDescription": "AIGovOps REPLAY - BLACKBOX copies cryptographic hashes and receipt data to the clipboard at your direction.",
+        "NSFaceIDUsageDescription": "Face ID is used to protect your AI governance receipts.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryPasteboard",
+            "NSPrivacyAccessedAPITypeReasons": ["1C8F.1"]
+          }
+        ],
+        "NSPrivacyCollectedDataTypes": [],
+        "NSPrivacyTracking": false
+      }
     },
     "android": {
       "package": "com.aigovops.mobile"
