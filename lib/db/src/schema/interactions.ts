@@ -35,10 +35,15 @@ export const interactionsTable = pgTable("interactions", {
   // All chainHash-based lookups in route handlers are scoped to userId to
   // maintain per-user chain isolation even when hashes are numerically equal.
   uniqueIndex("interactions_user_chain_hash_unique").on(table.userId, table.chainHash),
-  // Partial unique index on non-null prevHash: ensures at most one receipt
-  // can claim any given predecessor, providing DB-level fork prevention as
-  // defense-in-depth alongside the application-level advisory lock.
-  uniqueIndex("interactions_prev_hash_unique").on(table.prevHash).where(sql`prev_hash IS NOT NULL`),
+  // Partial composite unique index: ensures at most one receipt per user can
+  // claim any given predecessor (prevHash), providing DB-level fork prevention
+  // as defense-in-depth alongside the application-level advisory lock.
+  // Changed from global (prevHash) to per-user (userId, prevHash) for the same
+  // reason as chainHash above: prevHash values are chainHashes of predecessors,
+  // which can collide across users with identical content. A global constraint
+  // would reject a second user's receipt whose prevHash numerically equals
+  // another user's claimed prevHash, blocking their chain writes entirely.
+  uniqueIndex("interactions_user_prev_hash_unique").on(table.userId, table.prevHash).where(sql`prev_hash IS NOT NULL`),
 ]);
 
 export const insertInteractionSchema = createInsertSchema(interactionsTable).omit({ createdAt: true });
