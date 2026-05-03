@@ -218,6 +218,49 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     marginBottom: 20,
   },
+  tutorialCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 16,
+  },
+  tutorialRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  tutorialIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tutorialTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 2,
+  },
+  tutorialTitle: {
+    fontSize: 15,
+    fontFamily: "Inter_600SemiBold",
+  },
+  startBadge: {
+    borderRadius: 20,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  startBadgeText: {
+    fontSize: 9,
+    fontFamily: "Inter_700Bold",
+    color: "#fff",
+    letterSpacing: 0.5,
+  },
+  tutorialSub: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+  },
   chainBanner: {
     borderRadius: 16,
     padding: 16,
