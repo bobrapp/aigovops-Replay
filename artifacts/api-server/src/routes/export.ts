@@ -7,21 +7,21 @@
  *   - Scope the query strictly to the requesting user's own receipts
  *   - Set Content-Disposition: attachment so browsers trigger a download
  *
- * GET /export/jsonl   — NDJSON stream, one receipt per line (batched, never
- *                       fully buffered: rows are fetched 200 at a time and
- *                       written to the response before the next batch is read)
+ * GET /export/jsonl   — NDJSON stream, one receipt per line (memory-safe:
+ *                       rows are fetched in 200-row batches and written to the
+ *                       response before the next batch is read)
  * GET /export/html    — Self-contained HTML bundle with embedded chain verifier.
- *                       Streamed: the head+CSS+JS is written first, then rows
- *                       are fetched and written as individual card elements in
- *                       200-row batches.  Verification JS reads from DOM data-*
- *                       attributes so no server-side JSON blob is needed.
- * GET /export/sqlite  — SQLite .db file compatible with sqlite3 CLI / DB Browser.
- *                       The SQLite file format is inherently non-streamable
- *                       (a fixed-layout binary format whose page map is written
- *                       at the beginning).  We minimise peak memory by fetching
- *                       rows in 200-row batches and inserting each batch inside
- *                       a single transaction before moving to the next batch.
- *                       The final serialize() call produces the binary buffer.
+ *                       Streaming: the HTML head + skeleton are written first,
+ *                       then a JSON array script tag is streamed with COMPLETE
+ *                       receipt payloads (full prompt, full response, all hash
+ *                       fields) row-by-row in 200-row batches.  No full
+ *                       in-memory array is built server-side; each batch is
+ *                       serialised and written immediately.  The embedded JS
+ *                       reads from this JSON blob for both rendering and
+ *                       cryptographic chain verification.
+ * GET /export/sqlite  — SQLite .db file (binary format, inherently non-streamable).
+ *                       Memory footprint is minimised by fetching rows in 200-row
+ *                       batches and inserting them in per-batch transactions.
  */
 
 import { Router, type IRouter } from "express";
@@ -44,8 +44,7 @@ function exportFilename(userId: string, ext: string): string {
   return `aigovops-chain-${safeId}-${date}.${ext}`;
 }
 
-// ─── shared batch iterator ─────────────────────────────────────────────────────
-
+/** Async generator: yields rows in BATCH-sized pages ordered oldest-first. */
 async function* batchRows(uid: string) {
   let offset = 0;
   while (true) {
@@ -97,12 +96,6 @@ router.get("/export/jsonl", requireAuth, async (req, res) => {
 });
 
 // ─── GET /export/html ─────────────────────────────────────────────────────────
-//
-// True streaming: the HTML head+CSS+JS is written before any DB query, then
-// receipt cards are streamed 200 at a time as they are fetched.  Each card
-// embeds all cryptographic fields in data-* attributes so the embedded
-// verification script can re-derive chain hashes from the DOM without a
-// server-side JSON blob.
 
 router.get("/export/html", requireAuth, async (req, res) => {
   const uid = getUid(req as Express.Request);
@@ -113,19 +106,49 @@ router.get("/export/html", requireAuth, async (req, res) => {
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Transfer-Encoding", "chunked");
 
-  // Write head + CSS + skeleton UI immediately (before any DB query).
+  // ── 1. Write HTML head + skeleton before any DB query ──────────────────────
   res.write(HTML_HEAD(date));
 
-  // Stream receipt cards in batches.
+  // ── 2. Stream full receipt dataset as a JSON array in a script tag ─────────
+  //
+  // We write the opening bracket, then each row as a comma-prefixed JSON
+  // object (using leading commas so we never need to know whether a row is
+  // last), then close the array.  Each 200-row batch is serialised and written
+  // to the response immediately — the server never holds all rows in memory.
+  //
+  // COMPLETE receipt payloads are included: full prompt, full response, all
+  // cryptographic hash fields, policy status, tags, and timestamps.  No
+  // truncation.  The embedded verification JS reads exclusively from this
+  // blob, ensuring a single source of truth for both rendering and chain walk.
+  res.write('<script id="receipts-data" type="application/json">[\n');
+
   let totalWritten = 0;
   for await (const rows of batchRows(uid)) {
     for (const row of rows) {
+      const prefix = totalWritten === 0 ? "" : ",\n";
+      const obj = JSON.stringify({
+        id: row.id,
+        prompt: row.prompt,           // full, no truncation
+        response: row.response,       // full, no truncation
+        model: row.model,
+        tags: row.tags,
+        promptHash: row.promptHash,
+        responseHash: row.responseHash,
+        prevHash: row.prevHash ?? null,
+        chainHash: row.chainHash,
+        policyStatus: row.policyStatus,
+        policyViolations: row.policyViolations,
+        createdAt: row.createdAt.toISOString(),
+      // Escape </script> sequences that would break the tag boundary.
+      }).replace(/<\/script>/gi, "<\\/script>");
+      res.write(prefix + obj);
       totalWritten++;
-      res.write(htmlCard(row, totalWritten));
     }
   }
 
-  // Write the footer with the count and the verification + search script.
+  res.write("\n]</script>\n");
+
+  // ── 3. Write the verification + rendering JS and closing HTML ──────────────
   res.write(HTML_FOOT(totalWritten, date));
   res.end();
 });
@@ -163,10 +186,10 @@ router.get("/export/sqlite", requireAuth, async (req, res) => {
     `INSERT INTO interactions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   );
 
-  // Fetch and insert row-by-row in 200-row batches, each batch inside a
-  // single transaction, to keep peak memory proportional to batch size rather
-  // than total row count (save for the SQLite in-memory buffer itself, which
-  // is inherent to the format and cannot be streamed).
+  // Fetch rows in 200-row batches; insert each batch in a single transaction
+  // to keep peak memory proportional to batch size rather than total row count.
+  // (The final serialize() call is inherent to the SQLite binary format and
+  //  cannot be streamed further without a different storage approach.)
   for await (const rows of batchRows(uid)) {
     const insertBatch = sqlDb.transaction(() => {
       for (const row of rows) {
@@ -200,69 +223,7 @@ router.get("/export/sqlite", requireAuth, async (req, res) => {
   res.end(buf);
 });
 
-// ─── HTML streaming helpers ────────────────────────────────────────────────────
-
-type RowLike = {
-  id: string;
-  model: string;
-  policyStatus: string;
-  promptHash: string;
-  responseHash: string;
-  prevHash: string | null;
-  chainHash: string;
-  prompt: string;
-  tags: string[];
-  createdAt: Date;
-};
-
-function esc(s: string): string {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/** Renders a single receipt card with all verification data in data-* attributes. */
-function htmlCard(row: RowLike, idx: number): string {
-  const ts = row.createdAt.toISOString();
-  const tsDisplay = new Date(ts).toLocaleString();
-  const prev = row.prevHash ?? "";
-  const policyClass =
-    { pass: "policy-pass", fail: "policy-fail", pending: "policy-pending", error: "policy-error" }[
-      row.policyStatus
-    ] ?? "policy-pending";
-  const tags = row.tags
-    .map((t) => `<span class="tag">${esc(t)}</span>`)
-    .join("");
-  return `<div class="card pending"
-  data-idx="${idx}"
-  data-id="${esc(row.id)}"
-  data-created-at="${esc(ts)}"
-  data-chain-hash="${esc(row.chainHash)}"
-  data-prev-hash="${esc(prev)}"
-  data-prompt-hash="${esc(row.promptHash)}"
-  data-response-hash="${esc(row.responseHash)}"
-  data-model="${esc(row.model)}"
-  data-prompt="${esc(row.prompt.slice(0, 200))}">
-  <div class="card-header">
-    <span class="idx">#${idx}</span>
-    <span class="model-badge">${esc(row.model)}</span>
-    <span class="model-badge ${policyClass}">${esc(row.policyStatus)}</span>
-    <span class="verify-badge"></span>
-    <span class="ts">${esc(tsDisplay)}</span>
-  </div>
-  <div class="hash-row"><span class="hash-label">Chain</span><span class="hash-val">${esc(row.chainHash)}</span></div>
-  <div class="hash-row"><span class="hash-label">Prev</span>${
-    row.prevHash
-      ? `<span class="hash-val">${esc(row.prevHash.slice(0, 52))}…</span>`
-      : `<span class="hash-val genesis">genesis</span>`
-  }</div>
-  <div class="hash-row"><span class="hash-label">Prompt</span><span class="hash-val">${esc(row.promptHash.slice(0, 52))}…</span></div>
-  <div class="prompt-text">${esc(row.prompt.slice(0, 300))}</div>
-  ${tags ? `<div style="margin-top:8px">${tags}</div>` : ""}
-</div>`;
-}
+// ─── HTML helpers ──────────────────────────────────────────────────────────────
 
 function HTML_HEAD(date: string): string {
   return `<!DOCTYPE html>
@@ -270,7 +231,7 @@ function HTML_HEAD(date: string): string {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AIGovOps REPLAY — Chain Export ${date}</title>
+<title>AIGovOps REPLAY &#x2014; Chain Export ${date}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;padding:0 0 48px}
@@ -288,7 +249,6 @@ header{background:#1e293b;border-bottom:1px solid #334155;padding:20px 24px;posi
 .card:hover{border-color:#3b82f6}
 .card.ok{border-left:3px solid #10b981}
 .card.bad{border-left:3px solid #ef4444}
-.card.pending{border-left:3px solid #334155}
 .card-header{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
 .idx{font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 .model-badge{font-size:11px;padding:2px 8px;border-radius:99px;background:#1d4ed8;color:#bfdbfe;font-weight:600}
@@ -303,7 +263,7 @@ header{background:#1e293b;border-bottom:1px solid #334155;padding:20px 24px;posi
 .genesis{color:#38bdf8;font-style:italic}
 .prompt-text{font-size:13px;color:#cbd5e1;line-height:1.5;margin-top:10px;max-height:80px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 .tag{display:inline-block;font-size:10px;padding:2px 7px;border-radius:99px;background:#1e3a5f;color:#7dd3fc;margin:2px 2px 0 0;border:1px solid #1d4ed8}
-.verify-badge{font-size:10px;font-weight:700}
+.spinner{text-align:center;padding:40px;color:#64748b;font-size:14px}
 </style>
 </head>
 <body>
@@ -313,55 +273,51 @@ header{background:#1e293b;border-bottom:1px solid #334155;padding:20px 24px;posi
   <div id="banner-inline" style="margin-left:auto;font-size:13px;color:#94a3b8">Verifying&hellip;</div>
 </header>
 <div id="banner" style="display:none"></div>
-<div id="controls">
+<div id="controls" style="display:none">
   <input id="search" type="search" placeholder="Filter by model, prompt, ID&hellip;" autocomplete="off">
   <span id="count-label" style="font-size:12px;color:#64748b"></span>
 </div>
-<div class="cards" id="cards">
+<div class="cards" id="cards"><div class="spinner">Loading&hellip;</div></div>
 `;
 }
 
 function HTML_FOOT(count: number, date: string): string {
-  return `</div><!-- /cards -->
-<script>
+  return `<script>
 (async function(){
-  var cards = Array.from(document.querySelectorAll('.card[data-chain-hash]'));
-  var total = ${count};
+  // ── Parse full receipt dataset from embedded JSON blob ─────────────────────
+  var dataEl = document.getElementById('receipts-data');
+  var receipts = dataEl ? JSON.parse(dataEl.textContent || '[]') : [];
+  var total = receipts.length;
 
   // Sort ascending by createdAt (oldest first) for chain walk
-  cards.sort(function(a,b){
-    return a.dataset.createdAt < b.dataset.createdAt ? -1 : 1;
-  });
+  receipts.sort(function(a,b){ return a.createdAt < b.createdAt ? -1 : 1; });
 
-  // sha256 via Web Crypto
+  // ── sha256 via Web Crypto ──────────────────────────────────────────────────
   async function sha256hex(str){
     var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
     return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0')}).join('');
   }
 
-  // Walk chain in chronological order
+  // ── Chain verification ────────────────────────────────────────────────────
+  // chainHash = sha256("chain:" + promptHash + ":" + responseHash + ":" + prevHash|"GENESIS")
   var prevHash = null;
   var tampered = 0;
   var verifyMap = {};
-  for(var i=0;i<cards.length;i++){
-    var c = cards[i];
-    var ph = c.dataset.promptHash;
-    var rh = c.dataset.responseHash;
-    var storedPrev = c.dataset.prevHash || null;
-    var storedChain = c.dataset.chainHash;
+  for(var i=0;i<receipts.length;i++){
+    var r = receipts[i];
     var expectedPrevStr = prevHash === null ? 'GENESIS' : prevHash;
-    var expectedChain = await sha256hex('chain:'+ph+':'+rh+':'+expectedPrevStr);
-    var chainOk = storedChain === expectedChain;
-    var linkOk  = storedPrev === prevHash;
+    var expectedChain = await sha256hex('chain:'+r.promptHash+':'+r.responseHash+':'+expectedPrevStr);
+    var chainOk = r.chainHash === expectedChain;
+    var linkOk  = r.prevHash === prevHash;
     var ok = chainOk && linkOk;
     if(!ok) tampered++;
-    verifyMap[c.dataset.id] = ok;
-    prevHash = storedChain;
+    verifyMap[r.id] = ok;
+    prevHash = r.chainHash;
   }
 
   var intact = tampered === 0 && total > 0;
 
-  // Update banner
+  // ── Banner ────────────────────────────────────────────────────────────────
   var banner = document.getElementById('banner');
   var bannerI = document.getElementById('banner-inline');
   if(total === 0){
@@ -370,46 +326,83 @@ function HTML_FOOT(count: number, date: string): string {
     bannerI.textContent='Empty chain';
   } else if(intact){
     banner.className='intact';
-    banner.innerHTML='<span>&#x2713;</span><span>Chain intact &mdash; all '+total+' receipt'+(total===1?'':'s')+' verified</span>';
-    bannerI.textContent='&#x2713; Chain intact';
+    banner.innerHTML='<span>&#x2713;</span><span>Chain intact &#x2014; all '+total+' receipt'+(total===1?'':'s')+' verified</span>';
+    bannerI.textContent='\u2713 Chain intact';
     bannerI.style.color='#34d399';
   } else {
     banner.className='tampered';
-    banner.innerHTML='<span>&#x2717;</span><span>Tampered &mdash; '+tampered+' receipt'+(tampered===1?'':'s')+' failed verification</span>';
-    bannerI.textContent='&#x2717; Tampered';
+    banner.innerHTML='<span>&#x2717;</span><span>Tampered &#x2014; '+tampered+' receipt'+(tampered===1?'':'s')+' failed verification</span>';
+    bannerI.textContent='\u2717 Tampered';
     bannerI.style.color='#f87171';
   }
   banner.style.display='flex';
 
-  // Apply ok/bad class to each card
-  var allCards = Array.from(document.querySelectorAll('.card[data-id]'));
-  allCards.forEach(function(c){
-    var ok = verifyMap[c.dataset.id];
-    c.classList.remove('pending');
-    c.classList.add(ok ? 'ok' : 'bad');
-    var badge = c.querySelector('.verify-badge');
-    if(badge) badge.textContent = ok ? '' : '&#x2717; tampered';
-    if(badge && !ok) badge.style.cssText='font-size:11px;color:#f87171;font-weight:600';
-  });
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function esc(s){
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function pClass(s){
+    return {pass:'policy-pass',fail:'policy-fail',pending:'policy-pending',error:'policy-error'}[s]||'policy-pending';
+  }
 
-  // Count label
+  // ── Render cards (newest first) ───────────────────────────────────────────
+  var displayOrder = receipts.slice().reverse();
+
+  function renderCard(r, globalIdx){
+    var ok = verifyMap[r.id];
+    var ts = new Date(r.createdAt).toLocaleString();
+    var tags = (r.tags||[]).map(function(t){return '<span class="tag">'+esc(t)+'</span>'}).join('');
+    var prev = r.prevHash
+      ? '<span class="hash-val">'+esc(r.prevHash.slice(0,52))+'&hellip;</span>'
+      : '<span class="hash-val genesis">genesis</span>';
+    // Display first 300 chars of prompt in card; full data is in the JSON blob.
+    var promptDisplay = r.prompt.length > 300 ? r.prompt.slice(0,300)+'&hellip;' : esc(r.prompt);
+    return '<div class="card '+(ok?'ok':'bad')+'" data-model="'+esc(r.model)+'" data-prompt="'+esc(r.prompt.slice(0,200))+'" data-id="'+esc(r.id)+'">'+
+      '<div class="card-header">'+
+        '<span class="idx">#'+(globalIdx+1)+'</span>'+
+        '<span class="model-badge">'+esc(r.model)+'</span>'+
+        '<span class="model-badge '+pClass(r.policyStatus)+'">'+esc(r.policyStatus)+'</span>'+
+        (!ok?'<span style="font-size:11px;color:#f87171;font-weight:600">&#x2717; tampered</span>':'')+
+        '<span class="ts">'+esc(ts)+'</span>'+
+      '</div>'+
+      '<div class="hash-row"><span class="hash-label">Chain</span><span class="hash-val">'+esc(r.chainHash)+'</span></div>'+
+      '<div class="hash-row"><span class="hash-label">Prev</span>'+prev+'</div>'+
+      '<div class="hash-row"><span class="hash-label">Prompt</span><span class="hash-val">'+esc(r.promptHash.slice(0,52))+'&hellip;</span></div>'+
+      '<div class="prompt-text">'+promptDisplay+'</div>'+
+      (tags?'<div style="margin-top:8px">'+tags+'</div>':'')+
+    '</div>';
+  }
+
+  var cardsEl = document.getElementById('cards');
   var countEl = document.getElementById('count-label');
-  countEl.textContent = total + ' receipt' + (total===1?'':'s');
+  var controlsEl = document.getElementById('controls');
 
-  // Search filter (hide/show cards by class)
+  function render(items){
+    if(!items.length){
+      cardsEl.innerHTML='<div class="spinner">No matching receipts.</div>';
+      countEl.textContent='';
+      return;
+    }
+    cardsEl.innerHTML = items.map(function(r,i){ return renderCard(r, displayOrder.indexOf(r)); }).join('\\n');
+    countEl.textContent = items.length + ' of ' + total + ' receipts';
+  }
+
+  render(displayOrder);
+  controlsEl.style.display='flex';
+
+  // ── Search filter ─────────────────────────────────────────────────────────
   var searchEl = document.getElementById('search');
   searchEl.addEventListener('input', function(){
     var q = searchEl.value.toLowerCase().trim();
-    var visible = 0;
-    allCards.forEach(function(c){
-      var match = !q ||
-        (c.dataset.model||'').toLowerCase().includes(q) ||
-        (c.dataset.prompt||'').toLowerCase().includes(q) ||
-        (c.dataset.id||'').toLowerCase().includes(q);
-      c.style.display = match ? '' : 'none';
-      if(match) visible++;
+    if(!q){ render(displayOrder); return; }
+    var filtered = displayOrder.filter(function(r){
+      return r.model.toLowerCase().includes(q)||
+        r.prompt.toLowerCase().includes(q)||
+        r.response.toLowerCase().includes(q)||
+        r.id.toLowerCase().includes(q)||
+        (r.tags||[]).some(function(t){return t.toLowerCase().includes(q);});
     });
-    countEl.textContent = (q ? visible + ' of ' : '') + total + ' receipt' + (total===1?'':'s');
+    render(filtered);
   });
 })();
 </script>
