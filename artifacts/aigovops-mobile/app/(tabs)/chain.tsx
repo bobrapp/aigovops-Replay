@@ -28,7 +28,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "";
+const DOMAIN = process.env.EXPO_PUBLIC_DOMAIN ?? "";
+const BASE_URL = DOMAIN ? `https://${DOMAIN}` : "";
 
 type ExportFormat = { label: string; ext: string; mime: string; path: string };
 
