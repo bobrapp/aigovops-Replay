@@ -316,7 +316,7 @@ export const PublicVerificationResultPolicyStatus = {
 } as const;
 
 /**
- * Verification result returned from the public (token-gated) verify endpoint. Does not require a logged-in session. Prompt and response are present unless the issuer requested redaction via ?redact=1.
+ * Verification result returned from the public (token-gated) verify endpoint. Does not require a logged-in session. Prompt and response are present unless the issuer enabled redaction at share-link generation time (the `redact` field in CreateShareTokenBody). Redaction is enforced server-side from the stored token row — the recipient cannot override it.
 
  */
 export interface PublicVerificationResult {

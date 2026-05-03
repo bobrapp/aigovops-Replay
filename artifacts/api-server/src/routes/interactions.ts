@@ -612,7 +612,8 @@ router.post("/interactions/:id/share-token", requireAuth, async (req, res) => {
  *
  * Public endpoint — no auth required. Validates the share token, then runs the
  * same verification checks as the authenticated /interactions/:id/verify endpoint.
- * Prompt and response are omitted when ?redact=1 is passed.
+ * Prompt and response are omitted when the issuer set redact=true at token generation
+ * time (stored on the token row). The recipient cannot override this via query string.
  *
  * Security:
  *   - Token is looked up by SHA-256 hash to prevent timing leaks from partial matches.

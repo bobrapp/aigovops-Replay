@@ -113,11 +113,14 @@ export const activityLogTable = pgTable("activity_log", {
 export type ActivityLog = typeof activityLogTable.$inferSelect;
 
 /**
- * share_tokens — short-lived HMAC tokens granting public read-only access
- * to a single receipt's verification result.
+ * share_tokens — short-lived opaque bearer tokens granting public read-only
+ * access to a single receipt's verification result.
  *
- * Each row ties one token (stored as its SHA-256 HMAC, never the raw token)
- * to one interaction. The owner generates a token via
+ * Design: each raw token is a 32-byte cryptographically random value.
+ * Only SHA-256(rawToken) is persisted — a DB dump never leaks usable tokens.
+ * (HMAC is not required because the input is already high-entropy.)
+ *
+ * Each row ties one token to one interaction. The owner generates a token via
  * POST /api/interactions/:id/share-token; anyone with the raw token can
  * call GET /api/verify/:id?token=... without logging in.
  *

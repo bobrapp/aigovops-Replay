@@ -1,4 +1,5 @@
--- share_tokens: short-lived HMAC tokens for public receipt verification links
+-- share_tokens: short-lived opaque bearer tokens for public receipt verification links
+-- Raw tokens are 32-byte random values; only SHA-256(rawToken) is stored here.
 CREATE TABLE IF NOT EXISTS "share_tokens" (
   "id" text PRIMARY KEY,
   "interaction_id" text NOT NULL,

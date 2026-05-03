@@ -1732,7 +1732,7 @@ export function useGetAuditChainStatus<
 }
 
 /**
- * Authenticated, owner-only. Creates a short-lived HMAC token that grants read-only public access to this receipt's verification result via GET /verify/{id}?token=... — no account required to view it. Expiry is configurable via SHARE_TOKEN_EXPIRY_DAYS (default 7 days). The `redact` flag is stored on the token and enforced server-side; the recipient cannot override it.
+ * Authenticated, owner-only. Creates a short-lived opaque bearer token that grants read-only public access to this receipt's verification result via GET /verify/{id}?token=... — no account required to view it. The raw token is a 32-byte cryptographically random value; only its SHA-256 hash is stored in the database so a DB dump never leaks usable tokens. Expiry is configurable via SHARE_TOKEN_EXPIRY_DAYS (default 7 days). The `redact` flag is stored on the token and enforced server-side; the recipient cannot override it.
 
  * @summary Generate a public share token for a receipt's verification result
  */
