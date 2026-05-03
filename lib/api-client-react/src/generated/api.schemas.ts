@@ -62,6 +62,7 @@ export const InteractionPolicyStatus = {
   pass: "pass",
   fail: "fail",
   pending: "pending",
+  error: "error",
 } as const;
 
 export interface Interaction {
@@ -329,4 +330,5 @@ export const ListInteractionsPolicyStatus = {
   pass: "pass",
   fail: "fail",
   pending: "pending",
+  error: "error",
 } as const;

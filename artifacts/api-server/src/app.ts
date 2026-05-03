@@ -1,4 +1,5 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
@@ -152,20 +153,46 @@ function sameOriginGuard(req: Request, res: Response, next: NextFunction): void 
   next();
 }
 
-// HTTP security response headers — applied before all route handlers
+/**
+ * HTTP security headers — applied before all route handlers via helmet.
+ *
+ * Configuration rationale (pure JSON API server):
+ *
+ *  contentSecurityPolicy  — default-src 'none'; frame-ancestors 'none'
+ *                           This server emits only JSON. No scripts, styles,
+ *                           images or frames are ever served.
+ *  frameguard             — X-Frame-Options: DENY (clickjacking prevention)
+ *  referrerPolicy         — strict-origin-when-cross-origin
+ *  xPoweredBy             — removed (no information disclosure)
+ *  xXssProtection         — disabled (set to 0; the legacy XSS filter can
+ *                           itself introduce vulnerabilities in older browsers)
+ *  hsts                   — Strict-Transport-Security enforced in production
+ *  crossOriginEmbedderPolicy / crossOriginOpenerPolicy / crossOriginResourcePolicy
+ *                         — disabled; irrelevant for a JSON-only API origin
+ *
+ *  Permissions-Policy is set manually because helmet does not include it by
+ *  default and we want an explicit deny-all for sensitive browser features.
+ */
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    frameguard: { action: "deny" },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    xXssProtection: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: false,
+  }),
+);
+// Permissions-Policy: explicit deny-all for camera/mic/geo/payment.
+// helmet does not set this header by default; we add it manually.
 app.use((_req, res, next) => {
-  // Prevent MIME-type sniffing attacks
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  // Disallow embedding in frames (clickjacking prevention)
-  res.setHeader("X-Frame-Options", "DENY");
-  // Disable legacy XSS filter (can itself create vulnerabilities in older browsers)
-  res.setHeader("X-XSS-Protection", "0");
-  // Limit referrer information sent to third parties
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  // Restrict which browser features this API may use
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
-  // CSP: this server serves JSON only — prohibit all resource types except API calls
-  res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
   next();
 });
 

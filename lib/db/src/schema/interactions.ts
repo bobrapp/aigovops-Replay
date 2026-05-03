@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const policyStatusEnum = pgEnum("policy_status", ["pass", "fail", "pending"]);
+export const policyStatusEnum = pgEnum("policy_status", ["pass", "fail", "pending", "error"]);
 export const severityEnum = pgEnum("severity", ["low", "medium", "high", "critical"]);
 export const activityTypeEnum = pgEnum("activity_type", ["created", "replayed", "verified", "policy_check"]);
 

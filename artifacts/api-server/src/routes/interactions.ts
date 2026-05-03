@@ -57,6 +57,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import { Router, type IRouter } from "express";
+import { rateLimit } from "express-rate-limit";
 import { db, interactionsTable, activityLogTable, policiesTable } from "@workspace/db";
 import { eq, desc, count, and, sql } from "drizzle-orm";
 import {
@@ -75,6 +76,29 @@ import { requireAuth } from "../middlewares/requireAuth";
 function userId(req: Express.Request): string {
   return (req as Express.Request & { user: NonNullable<Express.Request["user"]> }).user.id;
 }
+
+/**
+ * Per-user mint rate limiter for POST /interactions.
+ *
+ * Keyed on the authenticated userId (set by requireAuth before this middleware
+ * runs). This prevents a single user from exhausting DB space or inflating chain
+ * length by minting receipts at an unbounded rate, while having no effect on other
+ * users' allowances.
+ *
+ * Configurable via environment variables with sensible defaults:
+ *   MINT_RATE_LIMIT_MAX        — max mints per window  (default: 30)
+ *   MINT_RATE_LIMIT_WINDOW_MS  — window in ms          (default: 60 000 = 1 min)
+ */
+const mintRateLimiter = rateLimit({
+  windowMs: Number(process.env["MINT_RATE_LIMIT_WINDOW_MS"] ?? 60_000),
+  limit: Number(process.env["MINT_RATE_LIMIT_MAX"] ?? 30),
+  keyGenerator: (req) => userId(req as Express.Request),
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: {
+    error: "Mint rate limit exceeded — you can create at most 30 receipts per minute. Please try again shortly.",
+  },
+});
 
 const router: IRouter = Router();
 
@@ -197,7 +221,7 @@ router.get("/interactions", requireAuth, async (req, res) => {
   });
 });
 
-router.post("/interactions", requireAuth, async (req, res) => {
+router.post("/interactions", requireAuth, mintRateLimiter, async (req, res) => {
   const body = CreateInteractionBody.parse(req.body);
 
   // userId always comes from the authenticated session, never from the request body.
@@ -216,14 +240,21 @@ router.post("/interactions", requireAuth, async (req, res) => {
     .where(eq(policiesTable.enabled, 1));
 
   const violations: string[] = [];
+  let policyEvalError = false;
   for (const policy of policies) {
-    const passed = evalPolicyRule(policy.rule, {
+    const { passed, error } = evalPolicyRule(policy.rule, {
       prompt: body.prompt,
       response: body.response,
       model: body.model,
       userId: uid,
     });
-    if (!passed) {
+    if (error) {
+      // Rule evaluation failed — surface as "error" status rather than silently
+      // treating as a pass. The route continues (fail-open) so one broken policy
+      // rule doesn't block all minting for the user.
+      policyEvalError = true;
+      req.log.warn({ policyId: policy.id, policyName: policy.name, error }, "Policy evaluation error");
+    } else if (!passed) {
       // Intentionally omit policy.rule from the violation string.
       // Exposing the rule expression would let users reverse-engineer governance
       // logic and craft prompts to evade future policy checks. Policy rules are
@@ -233,7 +264,12 @@ router.post("/interactions", requireAuth, async (req, res) => {
     }
   }
 
-  const policyStatus = violations.length > 0 ? "fail" : "pass";
+  // policyStatus priority: "error" > "fail" > "pass"
+  const policyStatus: "pass" | "fail" | "error" = policyEvalError
+    ? "error"
+    : violations.length > 0
+      ? "fail"
+      : "pass";
   const id = generateId();
   const pHash = hashPrompt(body.prompt);
   const rHash = hashResponse(body.response);
@@ -279,15 +315,17 @@ router.post("/interactions", requireAuth, async (req, res) => {
     return inserted;
   });
 
-  // Update violation counts outside the lock window
+  // Update violation counts outside the lock window.
+  // Skip count update if evaluation errored — avoid incrementing counts on
+  // broken rules (the "error" status was already recorded on the receipt).
   for (const policy of policies) {
-    const passed = evalPolicyRule(policy.rule, {
+    const { passed, error } = evalPolicyRule(policy.rule, {
       prompt: body.prompt,
       response: body.response,
       model: body.model,
       userId: uid,
     });
-    if (!passed) {
+    if (!error && !passed) {
       await db
         .update(policiesTable)
         .set({ violationCount: sql`${policiesTable.violationCount} + 1` })

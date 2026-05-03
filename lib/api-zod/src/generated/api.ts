@@ -128,7 +128,7 @@ export const ListInteractionsQueryParams = zod.object({
     .max(listInteractionsQueryOffsetMax)
     .default(listInteractionsQueryOffsetDefault),
   model: zod.coerce.string().optional(),
-  policyStatus: zod.enum(["pass", "fail", "pending"]).optional(),
+  policyStatus: zod.enum(["pass", "fail", "pending", "error"]).optional(),
 });
 
 export const ListInteractionsResponse = zod.object({
@@ -144,7 +144,7 @@ export const ListInteractionsResponse = zod.object({
       responseHash: zod.string(),
       prevHash: zod.string().nullish(),
       chainHash: zod.string(),
-      policyStatus: zod.enum(["pass", "fail", "pending"]),
+      policyStatus: zod.enum(["pass", "fail", "pending", "error"]),
       policyViolations: zod
         .array(zod.string())
         .describe(
@@ -221,7 +221,7 @@ export const GetInteractionResponse = zod.object({
   responseHash: zod.string(),
   prevHash: zod.string().nullish(),
   chainHash: zod.string(),
-  policyStatus: zod.enum(["pass", "fail", "pending"]),
+  policyStatus: zod.enum(["pass", "fail", "pending", "error"]),
   policyViolations: zod
     .array(zod.string())
     .describe(

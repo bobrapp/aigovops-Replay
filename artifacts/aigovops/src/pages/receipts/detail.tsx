@@ -19,13 +19,14 @@ function HashRow({ label, value }: { label: string; value: string | null | undef
   );
 }
 
-function PolicyBadge({ status }: { status: "pass" | "fail" | "pending" }) {
-  const map = {
+function PolicyBadge({ status }: { status: "pass" | "fail" | "pending" | "error" }) {
+  const map: Record<string, string> = {
     pass: "bg-emerald-50 text-emerald-700 border-emerald-200",
     fail: "bg-red-50 text-red-700 border-red-200",
     pending: "bg-amber-50 text-amber-700 border-amber-200",
+    error: "bg-orange-50 text-orange-700 border-orange-200",
   };
-  return <span className={`text-xs px-2.5 py-1 rounded-full border font-semibold uppercase tracking-wide ${map[status]}`}>{status}</span>;
+  return <span className={`text-xs px-2.5 py-1 rounded-full border font-semibold uppercase tracking-wide ${map[status] ?? map["pending"]}`}>{status}</span>;
 }
 
 export default function ReceiptDetail() {

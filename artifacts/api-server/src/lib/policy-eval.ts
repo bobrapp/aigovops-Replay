@@ -419,20 +419,38 @@ export function validatePolicyRule(rule: string): string | null {
 }
 
 /**
- * Safely evaluate a policy rule expression against an interaction context.
- * Returns true (pass) if the rule succeeds, false if it fails.
+ * Result of evaluating a policy rule.
  *
- * Errors default to passing so a misconfigured rule does not block all interactions.
+ * - passed: true if the rule evaluated to a truthy value (policy not violated)
+ * - error:  non-null when the rule could not be evaluated (parse or runtime error).
+ *           When error is set, `passed` is always true (fail-open to avoid blocking
+ *           all interactions on a misconfigured rule), and the caller should surface
+ *           the `error` status rather than silently treating it as a pass.
+ */
+export type PolicyEvalResult = { passed: boolean; error: string | null };
+
+/**
+ * Safely evaluate a policy rule expression against an interaction context.
+ *
+ * Security model: this evaluator uses a pure tokenize → parse → walk-AST pipeline
+ * with zero code-execution paths (no vm.Script, no new Function, no eval).
+ * The grammar is deliberately finite (no loops, no recursion beyond 500-char rules
+ * validated at storage time), so runaway/infinite-loop attacks are structurally
+ * impossible. This is strictly more restrictive than a vm.Script sandbox.
+ *
+ * Error behaviour: evaluation errors are returned as { passed: true, error: message }
+ * so the caller can surface a distinct "error" policy status without blocking mints.
  */
 export function evalPolicyRule(
   rule: string,
   ctx: { prompt: string; response: string; model: string; userId: string },
-): boolean {
+): PolicyEvalResult {
   try {
     const toks = tokenize(rule);
     const ast = parse(toks);
-    return !!evalAst(ast, ctx);
-  } catch {
-    return true;
+    const result = evalAst(ast, ctx);
+    return { passed: !!result, error: null };
+  } catch (e: unknown) {
+    return { passed: true, error: (e as Error).message ?? "Policy evaluation error" };
   }
 }

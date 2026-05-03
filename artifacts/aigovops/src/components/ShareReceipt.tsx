@@ -11,7 +11,7 @@ interface ShareReceiptProps {
     chainHash?: string | null;
     promptHash?: string | null;
     responseHash?: string | null;
-    policyStatus: "pass" | "fail" | "pending";
+    policyStatus: "pass" | "fail" | "pending" | "error";
     createdAt: string;
     userId: string;
   };

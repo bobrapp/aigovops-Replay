@@ -5,19 +5,23 @@ import { Clock, Plus, CheckCircle, XCircle, AlertCircle, ChevronRight, Award } f
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-function StatusIcon({ status }: { status: "pass" | "fail" | "pending" }) {
+function StatusIcon({ status }: { status: "pass" | "fail" | "pending" | "error" }) {
   if (status === "pass")
     return <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />;
   if (status === "fail")
     return <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />;
+  if (status === "error")
+    return <AlertCircle className="w-5 h-5 text-orange-500 flex-shrink-0" />;
   return <AlertCircle className="w-5 h-5 text-yellow-500 flex-shrink-0" />;
 }
 
-function StatusLabel({ status }: { status: "pass" | "fail" | "pending" }) {
+function StatusLabel({ status }: { status: "pass" | "fail" | "pending" | "error" }) {
   if (status === "pass")
     return <span className="text-xs text-emerald-500 font-medium">Safe</span>;
   if (status === "fail")
     return <span className="text-xs text-red-500 font-medium">Needs Review</span>;
+  if (status === "error")
+    return <span className="text-xs text-orange-500 font-medium">Policy Error</span>;
   return <span className="text-xs text-yellow-500 font-medium">Checking...</span>;
 }
 

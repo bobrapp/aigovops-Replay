@@ -33,14 +33,15 @@ function StatCard({ label, value, sub, icon: Icon, accent }: {
   );
 }
 
-function PolicyBadge({ status }: { status: "pass" | "fail" | "pending" }) {
-  const map = {
+function PolicyBadge({ status }: { status: "pass" | "fail" | "pending" | "error" }) {
+  const map: Record<string, string> = {
     pass: "bg-emerald-50 text-emerald-700 border-emerald-200",
     fail: "bg-red-50 text-red-700 border-red-200",
     pending: "bg-amber-50 text-amber-700 border-amber-200",
+    error: "bg-orange-50 text-orange-700 border-orange-200",
   };
   return (
-    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold uppercase tracking-wide flex-shrink-0 ${map[status]}`} data-testid={`policy-badge-${status}`}>
+    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold uppercase tracking-wide flex-shrink-0 ${map[status] ?? map["pending"]}`} data-testid={`policy-badge-${status}`}>
       {status}
     </span>
   );

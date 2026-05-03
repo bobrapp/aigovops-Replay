@@ -191,7 +191,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [pass, fail, pending]
+            enum: [pass, fail, pending, error]
       responses:
         "200":
           description: List of interaction receipts
@@ -543,7 +543,7 @@ components:
           type: string
         policyStatus:
           type: string
-          enum: [pass, fail, pending]
+          enum: [pass, fail, pending, error]
         policyViolations:
           type: array
           description: >

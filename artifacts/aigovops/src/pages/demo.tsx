@@ -269,7 +269,7 @@ interface Receipt {
   chainHash: string;
   prevHash: string | null;
   model: string;
-  policyStatus: "pass" | "fail" | "pending";
+  policyStatus: "pass" | "fail" | "pending" | "error";
   policyViolations: string[];
   createdAt: string;
   prompt: string;
