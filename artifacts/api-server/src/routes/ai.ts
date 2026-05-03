@@ -32,7 +32,7 @@ router.post("/ai/generate", async (req: Request, res: Response): Promise<void> =
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey, httpOptions: { baseUrl } });
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
 
     const result = await ai.models.generateContent({
       model: MODEL,
