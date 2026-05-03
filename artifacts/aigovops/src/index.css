@@ -205,6 +205,43 @@
 }
 
 /* ============================================================
+   LANDING PAGE ANIMATIONS
+   ============================================================ */
+@keyframes hero-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-10px); }
+}
+
+@keyframes stamp-pop {
+  0%   { opacity: 0; transform: scale(1.6) rotate(-12deg); }
+  60%  { opacity: 1; transform: scale(0.92) rotate(2deg); }
+  80%  { transform: scale(1.04) rotate(-1deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+@keyframes chain-draw {
+  from { stroke-dashoffset: 120; opacity: 0; }
+  to   { stroke-dashoffset: 0;   opacity: 1; }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.35; }
+  50%       { opacity: 0.55; }
+}
+
+.hero-float {
+  animation: hero-float 6s ease-in-out infinite;
+}
+
+.stamp-animate {
+  animation: stamp-pop 1.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.glow-pulse {
+  animation: glow-pulse 4s ease-in-out infinite;
+}
+
+/* ============================================================
    ACCESSIBILITY: Skip-to-content link
    ============================================================ */
 .skip-to-content {
