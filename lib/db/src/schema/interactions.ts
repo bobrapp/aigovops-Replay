@@ -88,7 +88,13 @@ export const activityLogTable = pgTable("activity_log", {
    * on the prevLogHash lookup (see lib/activity-log.ts).
    */
   prevLogHash: text("prev_log_hash"),
-  logHash: text("log_hash").notNull(),
+  /**
+   * logHash is nullable for backward compatibility: pre-migration rows that
+   * existed before 0001_add_activity_log_hash_chain.sql was applied will have
+   * NULL here and are skipped (not failed) during chain verification.
+   * Post-migration rows always have a non-null hash (enforced in insertActivityLog).
+   */
+  logHash: text("log_hash"),
 });
 
 export type ActivityLog = typeof activityLogTable.$inferSelect;

@@ -82,7 +82,7 @@ export async function insertActivityLog(params: {
           interactionId: params.interactionId,
           summary: params.summary,
           prevLogHash,
-          logHash: "pending",
+          logHash: null,
         })
         .returning({ createdAt: activityLogTable.createdAt });
 

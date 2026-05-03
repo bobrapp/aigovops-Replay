@@ -1,17 +1,29 @@
-CREATE TYPE "public"."activity_type" AS ENUM('created', 'replayed', 'verified', 'policy_check');--> statement-breakpoint
-CREATE TYPE "public"."policy_status" AS ENUM('pass', 'fail', 'pending', 'error');--> statement-breakpoint
-CREATE TYPE "public"."severity" AS ENUM('low', 'medium', 'high', 'critical');--> statement-breakpoint
-CREATE TABLE "activity_log" (
+-- Base schema snapshot for fresh installs.
+-- All statements use CREATE … IF NOT EXISTS / DO $$ … IF NOT EXISTS so this
+-- file is safe to replay on a database where some objects already exist.
+--
+-- NOTE: activity_log is created WITHOUT the hash-chain columns here so that
+-- 0001_add_activity_log_hash_chain.sql is the single authoritative migration
+-- for adding prev_log_hash / log_hash. This keeps the upgrade path for
+-- existing databases identical to the fresh-install path.
+DO $$ BEGIN
+  CREATE TYPE "public"."activity_type" AS ENUM('created', 'replayed', 'verified', 'policy_check');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."policy_status" AS ENUM('pass', 'fail', 'pending', 'error');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."severity" AS ENUM('low', 'medium', 'high', 'critical');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "activity_log" (
         "id" text PRIMARY KEY NOT NULL,
         "type" "activity_type" NOT NULL,
         "interaction_id" text NOT NULL,
         "summary" text NOT NULL,
-        "created_at" timestamp DEFAULT now() NOT NULL,
-        "prev_log_hash" text,
-        "log_hash" text NOT NULL
+        "created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "interactions" (
+CREATE TABLE IF NOT EXISTS "interactions" (
         "id" text PRIMARY KEY NOT NULL,
         "prompt" text NOT NULL,
         "response" text NOT NULL,
@@ -28,7 +40,7 @@ CREATE TABLE "interactions" (
         "created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "policies" (
+CREATE TABLE IF NOT EXISTS "policies" (
         "id" text PRIMARY KEY NOT NULL,
         "name" text NOT NULL,
         "description" text NOT NULL,
@@ -40,13 +52,13 @@ CREATE TABLE "policies" (
         "updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "sessions" (
+CREATE TABLE IF NOT EXISTS "sessions" (
         "sid" varchar PRIMARY KEY NOT NULL,
         "sess" jsonb NOT NULL,
         "expire" timestamp NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "users" (
+CREATE TABLE IF NOT EXISTS "users" (
         "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
         "email" varchar,
         "first_name" varchar,
@@ -57,6 +69,6 @@ CREATE TABLE "users" (
         CONSTRAINT "users_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "interactions_user_chain_hash_unique" ON "interactions" USING btree ("user_id","chain_hash");--> statement-breakpoint
-CREATE UNIQUE INDEX "interactions_user_prev_hash_unique" ON "interactions" USING btree ("user_id","prev_hash") WHERE prev_hash IS NOT NULL;--> statement-breakpoint
-CREATE INDEX "IDX_session_expire" ON "sessions" USING btree ("expire");
+CREATE UNIQUE INDEX IF NOT EXISTS "interactions_user_chain_hash_unique" ON "interactions" USING btree ("user_id","chain_hash");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "interactions_user_prev_hash_unique" ON "interactions" USING btree ("user_id","prev_hash") WHERE prev_hash IS NOT NULL;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "sessions" USING btree ("expire");
