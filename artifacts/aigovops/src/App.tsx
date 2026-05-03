@@ -367,7 +367,7 @@ const STAKES = [
 ];
 
 function TrustStrip() {
-  const { data: stats } = useGetStats({ query: { retry: false, throwOnError: false } });
+  const { data: stats } = useGetStats();
   const count = stats?.totalInteractions;
 
   return (
@@ -385,18 +385,16 @@ function TrustStrip() {
           {badge}
         </span>
       ))}
-      {count !== undefined && (
-        <span
-          className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full"
-          style={{
-            background: "rgba(16,185,129,0.15)",
-            border: "1px solid rgba(16,185,129,0.3)",
-            color: "#10b981",
-          }}
-        >
-          ● {count.toLocaleString()} receipts verified
-        </span>
-      )}
+      <span
+        className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full transition-all duration-500"
+        style={{
+          background: "rgba(16,185,129,0.15)",
+          border: "1px solid rgba(16,185,129,0.3)",
+          color: "#10b981",
+        }}
+      >
+        {count !== undefined ? `● ${count.toLocaleString()} receipts verified` : "● receipts verified"}
+      </span>
     </div>
   );
 }
