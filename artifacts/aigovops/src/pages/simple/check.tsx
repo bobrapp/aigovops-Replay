@@ -33,13 +33,26 @@ export default function SimpleCheck() {
   const [lookupId, setLookupId] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
-  const { data: interaction } = useGetInteraction(lookupId!, {
-    query: { enabled: !!lookupId, queryKey: getGetInteractionQueryKey(lookupId!) },
+  const {
+    data: interaction,
+    isError: isInteractionError,
+    error: interactionError,
+  } = useGetInteraction(lookupId!, {
+    query: { enabled: !!lookupId, queryKey: getGetInteractionQueryKey(lookupId!), retry: 1 },
   });
 
   const { data: verification, refetch } = useVerifyInteraction(lookupId!, {
     query: { enabled: false, queryKey: ["simple-verify", lookupId] },
   });
+
+  function friendlyErrorMessage(err: unknown): string {
+    const status = (err as { status?: number })?.status;
+    if (status === 404) return "Recording not found. Double-check the ID and try again.";
+    if (status === 429) return "Too many requests. Please wait a moment and try again.";
+    if (status && status >= 500) return "Our servers hit a problem. Please try again in a moment.";
+    if (typeof navigator !== "undefined" && !navigator.onLine) return "No internet connection. Please check your network.";
+    return "Could not check this recording. Please try again.";
+  }
 
   async function handleCheck() {
     if (!receiptId.trim()) return;
@@ -157,14 +170,18 @@ export default function SimpleCheck() {
         </div>
       )}
 
-      {/* Not found */}
+      {/* Not found / error */}
       {!checking && lookupId && !interaction && (
         <div className="text-center py-8 space-y-3" data-testid="simple-check-not-found">
-          <div className="text-5xl">🔎</div>
+          <div className="text-5xl">{isInteractionError ? "⚠️" : "🔎"}</div>
           <div>
-            <div className="font-semibold text-foreground">Recording not found</div>
+            <div className="font-semibold text-foreground">
+              {isInteractionError ? "Check failed" : "Recording not found"}
+            </div>
             <div className="text-sm text-muted-foreground mt-1">
-              Double-check the ID and try again.
+              {isInteractionError
+                ? friendlyErrorMessage(interactionError)
+                : "Double-check the ID — you can find it in \"My Recordings\"."}
             </div>
           </div>
         </div>

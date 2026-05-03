@@ -120,10 +120,18 @@ export default function VerifyScreen() {
         )}
 
         {data && (
-          <View style={[styles.resultCard, {
-            backgroundColor: data.valid ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
-            borderColor: data.valid ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)",
-          }]}>
+          <View
+            style={[styles.resultCard, {
+              backgroundColor: data.valid ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
+              borderColor: data.valid ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)",
+            }]}
+            accessibilityLiveRegion="polite"
+            accessibilityLabel={
+              data.valid
+                ? `Receipt verified. Valid. Prompt hash ${data.promptHashMatch ? "matches" : "mismatch"}. Response hash ${data.responseHashMatch ? "matches" : "mismatch"}. Chain ${data.chainIntact ? "intact" : "broken"}.`
+                : `Receipt verification failed. Invalid receipt.`
+            }
+          >
             <LinearGradient
               colors={data.valid ? ["rgba(16,185,129,0.2)", "transparent"] : ["rgba(239,68,68,0.2)", "transparent"]}
               style={StyleSheet.absoluteFill}

@@ -3,6 +3,7 @@ import { useGetInteraction, useVerifyInteraction } from "@workspace/api-client-r
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as Speech from "expo-speech";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -52,6 +53,7 @@ export default function ReceiptDetailScreen() {
 
   const { data: receipt, isLoading } = useGetInteraction(id ?? "");
   const [verifying, setVerifying] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const { data: verifyResult, refetch: doVerify } = useVerifyInteraction(id ?? "");
 
   async function handleVerify() {
@@ -59,6 +61,37 @@ export default function ReceiptDetailScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await doVerify();
     setVerifying(false);
+  }
+
+  async function handleReadAloud() {
+    if (speaking) {
+      Speech.stop();
+      setSpeaking(false);
+      return;
+    }
+    if (!receipt) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    const statusLabel =
+      receipt.policyStatus === "pass"
+        ? "Policy passed."
+        : receipt.policyStatus === "fail"
+        ? "Policy failed."
+        : "Policy pending review.";
+
+    const text =
+      `Receipt from ${new Date(receipt.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}. ` +
+      `Model: ${receipt.model}. ${statusLabel} ` +
+      `Prompt: ${receipt.prompt}. ` +
+      `Response: ${receipt.response}`;
+
+    setSpeaking(true);
+    Speech.speak(text, {
+      onDone: () => setSpeaking(false),
+      onError: () => setSpeaking(false),
+      onStopped: () => setSpeaking(false),
+    });
   }
 
   async function handleShare() {
@@ -84,22 +117,37 @@ export default function ReceiptDetailScreen() {
       <View style={[styles.navBar, { paddingTop: topInset + 8, borderBottomColor: colors.border, backgroundColor: colors.background }]}>
         <Pressable
           onPress={() => router.back()}
-          style={styles.backBtn}
+          style={styles.navBtn}
           accessibilityLabel="Go back"
           accessibilityRole="button"
         >
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </Pressable>
         <Text style={[styles.navTitle, { color: colors.foreground }]}>Receipt</Text>
-        <Pressable
-          onPress={handleShare}
-          style={styles.backBtn}
-          disabled={!receipt}
-          accessibilityLabel="Share receipt"
-          accessibilityRole="button"
-        >
-          <Ionicons name="share-outline" size={22} color={receipt ? colors.primary : colors.mutedForeground} />
-        </Pressable>
+        <View style={styles.navActions}>
+          <Pressable
+            onPress={handleReadAloud}
+            style={styles.navBtn}
+            disabled={!receipt}
+            accessibilityLabel={speaking ? "Stop reading aloud" : "Read receipt aloud"}
+            accessibilityRole="button"
+          >
+            <Ionicons
+              name={speaking ? "stop-circle-outline" : "volume-medium-outline"}
+              size={22}
+              color={speaking ? colors.primary : receipt ? colors.mutedForeground : colors.border}
+            />
+          </Pressable>
+          <Pressable
+            onPress={handleShare}
+            style={styles.navBtn}
+            disabled={!receipt}
+            accessibilityLabel="Share receipt"
+            accessibilityRole="button"
+          >
+            <Ionicons name="share-outline" size={22} color={receipt ? colors.primary : colors.border} />
+          </Pressable>
+        </View>
       </View>
 
       {isLoading ? (
@@ -238,7 +286,8 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     borderBottomWidth: 1,
   },
-  backBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  navBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  navActions: { flexDirection: "row" },
   navTitle: {
     flex: 1,
     textAlign: "center",

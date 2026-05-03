@@ -27,16 +27,18 @@ const queryClient = new QueryClient();
 
 const DOMAIN = process.env.EXPO_PUBLIC_DOMAIN ?? "";
 const LOCK_AFTER_SECONDS = 60;
+const SESSION_TIMEOUT_SECONDS = 900; // 15 minutes
 
 if (DOMAIN) {
   setBaseUrl(`https://${DOMAIN}`);
 }
 
 function RootLayoutNav() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, logout } = useAuth();
   const [isLocked, setIsLocked] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const backgroundedAt = useRef<number | null>(null);
+  const sessionBackgroundedAt = useRef<number | null>(null);
 
   useEffect(() => {
     if (!user || Platform.OS === "web") return;
@@ -47,6 +49,7 @@ function RootLayoutNav() {
     })();
   }, [user]);
 
+  // Biometric lock — activates when app is backgrounded for > 60 seconds
   useEffect(() => {
     if (!user || !biometricAvailable || Platform.OS === "web") return;
 
@@ -65,6 +68,26 @@ function RootLayoutNav() {
     const sub = AppState.addEventListener("change", handleStateChange);
     return () => sub.remove();
   }, [user, biometricAvailable]);
+
+  // Session auto-timeout — logs out when app is backgrounded for > 15 minutes
+  useEffect(() => {
+    if (!user || Platform.OS === "web") return;
+
+    const handleStateChange = (nextState: AppStateStatus) => {
+      if (nextState === "background" || nextState === "inactive") {
+        sessionBackgroundedAt.current = Date.now();
+      } else if (nextState === "active" && sessionBackgroundedAt.current !== null) {
+        const elapsed = (Date.now() - sessionBackgroundedAt.current) / 1000;
+        if (elapsed > SESSION_TIMEOUT_SECONDS) {
+          logout();
+        }
+        sessionBackgroundedAt.current = null;
+      }
+    };
+
+    const sub = AppState.addEventListener("change", handleStateChange);
+    return () => sub.remove();
+  }, [user, logout]);
 
   async function handleUnlock(): Promise<boolean> {
     const result = await LocalAuthentication.authenticateAsync({

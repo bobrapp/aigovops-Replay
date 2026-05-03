@@ -1,9 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useListInteractions } from "@workspace/api-client-react";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Platform,
   Pressable,
@@ -15,13 +14,19 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ReceiptCard } from "@/components/ReceiptCard";
+import { SkeletonCard } from "@/components/SkeletonCard";
 import { useColors } from "@/hooks/useColors";
+
+const SKELETON_COUNT = 5;
 
 export default function FeedScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [voiceSearching, setVoiceSearching] = useState(false);
+  const searchRef = useRef<TextInput>(null);
+  const speechRecRef = useRef<any>(null);
 
   const { data, isLoading, error, refetch } = useListInteractions({ limit: 50, offset: 0 });
 
@@ -38,6 +43,40 @@ export default function FeedScreen() {
     setRefreshing(true);
     await refetch();
     setRefreshing(false);
+  }
+
+  function handleVoiceSearch() {
+    if (Platform.OS === "web") {
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        searchRef.current?.focus();
+        return;
+      }
+
+      if (voiceSearching) {
+        speechRecRef.current?.stop();
+        setVoiceSearching(false);
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.onresult = (e: any) => {
+        const transcript = e.results[0][0].transcript as string;
+        setSearch(transcript);
+        setVoiceSearching(false);
+      };
+      recognition.onend = () => setVoiceSearching(false);
+      recognition.onerror = () => setVoiceSearching(false);
+      speechRecRef.current = recognition;
+      recognition.start();
+      setVoiceSearching(true);
+    } else {
+      // On native, focus the input — the system keyboard provides a mic key
+      searchRef.current?.focus();
+    }
   }
 
   const topInset = insets.top + (Platform.OS === "web" ? 67 : 0);
@@ -60,11 +99,13 @@ export default function FeedScreen() {
         <View style={[styles.searchBar, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
           <Ionicons name="search" size={16} color={colors.mutedForeground} />
           <TextInput
+            ref={searchRef}
             style={[styles.searchInput, { color: colors.foreground }]}
             placeholder="Search by model or prompt…"
             placeholderTextColor={colors.mutedForeground}
             value={search}
             onChangeText={setSearch}
+            accessibilityLabel="Search receipts"
           />
           {search.length > 0 && (
             <Pressable
@@ -76,12 +117,26 @@ export default function FeedScreen() {
               <Ionicons name="close-circle" size={16} color={colors.mutedForeground} />
             </Pressable>
           )}
+          <Pressable
+            onPress={handleVoiceSearch}
+            accessibilityLabel={voiceSearching ? "Stop voice search" : "Search by voice"}
+            accessibilityRole="button"
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons
+              name={voiceSearching ? "mic" : "mic-outline"}
+              size={16}
+              color={voiceSearching ? colors.primary : colors.mutedForeground}
+            />
+          </Pressable>
         </View>
       </View>
 
       {isLoading && !refreshing ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} size="large" />
+        <View style={styles.skeletonList}>
+          {Array.from({ length: SKELETON_COUNT }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
         </View>
       ) : error ? (
         <View style={styles.center}>
@@ -183,6 +238,9 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontFamily: "Inter_400Regular",
+  },
+  skeletonList: {
+    paddingTop: 12,
   },
   center: {
     flex: 1,

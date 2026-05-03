@@ -453,7 +453,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-auto bg-background">
+        <main id="main-content" className="flex-1 overflow-auto bg-background">
           <div className={`p-6 md:p-8 w-full mx-auto ${isSimple ? "max-w-lg" : "max-w-5xl"}`}>
             {children}
           </div>

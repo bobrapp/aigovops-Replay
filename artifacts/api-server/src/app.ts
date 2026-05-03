@@ -131,6 +131,23 @@ function sameOriginGuard(req: Request, res: Response, next: NextFunction): void 
   next();
 }
 
+// HTTP security response headers — applied before all route handlers
+app.use((_req, res, next) => {
+  // Prevent MIME-type sniffing attacks
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  // Disallow embedding in frames (clickjacking prevention)
+  res.setHeader("X-Frame-Options", "DENY");
+  // Disable legacy XSS filter (can itself create vulnerabilities in older browsers)
+  res.setHeader("X-XSS-Protection", "0");
+  // Limit referrer information sent to third parties
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  // Restrict which browser features this API may use
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  // CSP: this server serves JSON only — prohibit all resource types except API calls
+  res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+  next();
+});
+
 app.use(
   pinoHttp({
     logger,

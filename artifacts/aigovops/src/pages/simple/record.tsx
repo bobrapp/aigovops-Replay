@@ -241,9 +241,24 @@ export default function SimpleRecord() {
         if (status === 401) {
           setNeedsAuth(true);
           setSubmitError(null);
+        } else if (status === 413) {
+          setNeedsAuth(false);
+          setSubmitError("Your text is too long. Please shorten the prompt or response and try again.");
+        } else if (status === 429) {
+          setNeedsAuth(false);
+          setSubmitError("You're submitting too quickly. Please wait a moment and try again.");
+        } else if (status === 400) {
+          setNeedsAuth(false);
+          setSubmitError("Please check your inputs — both the question and reply fields are required.");
+        } else if (status && status >= 500) {
+          setNeedsAuth(false);
+          setSubmitError("Our servers hit a problem. Please try again in a moment.");
+        } else if (!navigator.onLine) {
+          setNeedsAuth(false);
+          setSubmitError("No internet connection. Please check your network and try again.");
         } else {
           setNeedsAuth(false);
-          setSubmitError(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+          setSubmitError("Something went wrong. Please try again.");
         }
       },
     },
