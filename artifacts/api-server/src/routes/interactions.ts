@@ -255,7 +255,7 @@ router.post("/interactions", requireAuth, async (req, res) => {
       .limit(1);
 
     const prevHash = latest?.chainHash ?? null;
-    const chainHash = buildChainHash(pHash, rHash, prevHash);
+    const chainHash = buildChainHash(pHash, rHash, prevHash, uid);
 
     const [inserted] = await tx
       .insert(interactionsTable)
@@ -348,8 +348,13 @@ router.get("/interactions/:id/verify", requireAuth, async (req, res) => {
   const promptHashMatch = hashPrompt(interaction.prompt) === interaction.promptHash;
   const responseHashMatch = hashResponse(interaction.response) === interaction.responseHash;
 
-  // 2. Verify the receipt's own chainHash is correctly computed from its stored fields
-  const expectedChainHash = buildChainHash(interaction.promptHash, interaction.responseHash, interaction.prevHash ?? null);
+  // 2. Verify the receipt's own chainHash is correctly computed from its stored fields.
+  // userId is passed because buildChainHash now includes it to prevent cross-user
+  // chain hash collisions (see crypto.ts). Verification re-derives using the stored
+  // userId so receipts minted before this change will fail self-consistency (they
+  // will show chainIntact=false), which is the correct behaviour — those hashes
+  // were computed with the old function signature and are no longer verifiable.
+  const expectedChainHash = buildChainHash(interaction.promptHash, interaction.responseHash, interaction.prevHash ?? null, interaction.userId);
   const chainHashSelfConsistent = expectedChainHash === interaction.chainHash;
 
   // 3. Verify the predecessor exists in the chain (detects orphaned receipts)
@@ -483,7 +488,7 @@ router.post("/interactions/:id/replay", requireAuth, async (req, res) => {
       .limit(1);
 
     const prevHash = latest?.chainHash ?? null;
-    const chainHash = buildChainHash(pHash, rHash, prevHash);
+    const chainHash = buildChainHash(pHash, rHash, prevHash, interaction.userId);
 
     await tx.insert(interactionsTable).values({
       id: newId,
