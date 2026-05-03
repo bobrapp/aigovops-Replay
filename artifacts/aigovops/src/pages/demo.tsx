@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Shield, ArrowRight, CheckCircle, RefreshCw, Hash, User, Clock, ChevronRight, Zap } from "lucide-react";
+import { Shield, ArrowRight, CheckCircle, RefreshCw, Hash, User, Clock, ChevronRight, Zap, Sparkles, Send } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
@@ -28,7 +28,8 @@ const DEMO_PROMPTS = [
   }
 ];
 
-type Step = "choose" | "submitting" | "receipt" | "verifying" | "verified" | "replaying" | "replayed";
+type Mode = "preset" | "live";
+type Step = "choose" | "generating" | "submitting" | "receipt" | "verifying" | "verified" | "replaying" | "replayed";
 
 interface Receipt {
   id: string;
@@ -45,8 +46,11 @@ interface Receipt {
 }
 
 export default function DemoPage() {
+  const [mode, setMode] = useState<Mode>("preset");
   const [step, setStep] = useState<Step>("choose");
   const [selected, setSelected] = useState(0);
+  const [livePrompt, setLivePrompt] = useState("");
+  const [liveResponse, setLiveResponse] = useState("");
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [verifyOk, setVerifyOk] = useState<boolean | null>(null);
   const [replayResponse, setReplayResponse] = useState<string | null>(null);
@@ -55,7 +59,35 @@ export default function DemoPage() {
 
   const demo = DEMO_PROMPTS[selected];
 
+  function activePrompt() { return mode === "live" ? livePrompt : demo.prompt; }
+  function activeResponse() { return mode === "live" ? liveResponse : demo.response; }
+  function activeModel() { return mode === "live" ? "gemini-2.5-flash" : demo.model; }
+  function activeTags() { return mode === "live" ? ["live", "gemini"] : demo.tags; }
+
+  async function generateLiveResponse() {
+    if (!livePrompt.trim()) return;
+    setStep("generating");
+    setError(null);
+    setLiveResponse("");
+    try {
+      const res = await fetch("/api/ai/generate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: livePrompt }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setLiveResponse(data.response);
+      setStep("choose");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+      setStep("choose");
+    }
+  }
+
   async function mintReceipt() {
+    if (mode === "live" && !liveResponse) return;
     setStep("submitting");
     setError(null);
     try {
@@ -64,10 +96,10 @@ export default function DemoPage() {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: demo.prompt,
-          response: demo.response,
-          model: demo.model,
-          tags: demo.tags,
+          prompt: activePrompt(),
+          response: activeResponse(),
+          model: activeModel(),
+          tags: activeTags(),
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -119,6 +151,7 @@ export default function DemoPage() {
     setVerifyOk(null);
     setReplayResponse(null);
     setError(null);
+    setLiveResponse("");
   }
 
   const steps = [
@@ -127,8 +160,10 @@ export default function DemoPage() {
     { id: "verified", label: "Verify" },
     { id: "replayed", label: "Replay" },
   ];
-  const stepIndex = ["choose", "submitting", "receipt", "verifying", "verified", "replaying", "replayed"].indexOf(step);
-  const progressIndex = stepIndex <= 1 ? 0 : stepIndex <= 3 ? 1 : stepIndex <= 4 ? 2 : 3;
+  const stepIndex = ["choose", "generating", "submitting", "receipt", "verifying", "verified", "replaying", "replayed"].indexOf(step);
+  const progressIndex = stepIndex <= 2 ? 0 : stepIndex <= 3 ? 1 : stepIndex <= 5 ? 2 : 3;
+
+  const isChoosing = step === "choose" || step === "generating" || step === "submitting";
 
   return (
     <div className="space-y-6 max-w-2xl" data-testid="demo-page">
@@ -172,42 +207,129 @@ export default function DemoPage() {
       )}
 
       {/* Step: Choose */}
-      {(step === "choose" || step === "submitting") && (
+      {isChoosing && (
         <div className="space-y-4">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono">SELECT SCENARIO</div>
-          <div className="grid gap-2">
-            {DEMO_PROMPTS.map((p, i) => (
-              <div
-                key={i}
-                onClick={() => setSelected(i)}
-                className={`border rounded p-3 cursor-pointer transition-all font-mono text-xs ${selected === i ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/40"}`}
-                data-testid={`demo-scenario-${i}`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-bold text-foreground">{p.label}</span>
-                  {selected === i && <span className="text-primary text-[10px]">SELECTED</span>}
-                </div>
-                <div className="text-muted-foreground truncate">{p.prompt.slice(0, 80)}…</div>
-                <div className="flex gap-1 mt-1.5">
-                  {p.tags.map((t) => (
-                    <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">{t}</span>
-                  ))}
-                </div>
-              </div>
-            ))}
+          {/* Mode toggle */}
+          <div className="flex gap-1 p-1 bg-muted/30 rounded border border-border w-fit">
+            <button
+              onClick={() => { setMode("preset"); setError(null); }}
+              className={`px-3 py-1.5 text-[11px] font-mono font-bold rounded transition-colors ${mode === "preset" ? "bg-background text-foreground shadow-sm border border-border" : "text-muted-foreground hover:text-foreground"}`}
+              data-testid="demo-tab-preset"
+            >
+              PRESET SCENARIOS
+            </button>
+            <button
+              onClick={() => { setMode("live"); setError(null); }}
+              className={`px-3 py-1.5 text-[11px] font-mono font-bold rounded transition-colors flex items-center gap-1.5 ${mode === "live" ? "bg-background text-foreground shadow-sm border border-border" : "text-muted-foreground hover:text-foreground"}`}
+              data-testid="demo-tab-live"
+            >
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              LIVE AI
+            </button>
           </div>
-          <button
-            onClick={mintReceipt}
-            disabled={step === "submitting"}
-            className="w-full bg-primary text-primary-foreground rounded px-4 py-2.5 text-xs font-mono font-bold flex items-center justify-center gap-2 hover:bg-primary/90 disabled:opacity-50 transition-colors"
-            data-testid="demo-button-mint"
-          >
-            {step === "submitting" ? (
-              <><RefreshCw className="w-3 h-3 animate-spin" />MINTING RECEIPT…</>
-            ) : (
-              <><Shield className="w-3 h-3" />MINT RECEIPT<ArrowRight className="w-3 h-3" /></>
-            )}
-          </button>
+
+          {mode === "preset" && (
+            <>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono">SELECT SCENARIO</div>
+              <div className="grid gap-2">
+                {DEMO_PROMPTS.map((p, i) => (
+                  <div
+                    key={i}
+                    onClick={() => setSelected(i)}
+                    className={`border rounded p-3 cursor-pointer transition-all font-mono text-xs ${selected === i ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/40"}`}
+                    data-testid={`demo-scenario-${i}`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-foreground">{p.label}</span>
+                      {selected === i && <span className="text-primary text-[10px]">SELECTED</span>}
+                    </div>
+                    <div className="text-muted-foreground truncate">{p.prompt.slice(0, 80)}…</div>
+                    <div className="flex gap-1 mt-1.5">
+                      {p.tags.map((t) => (
+                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">{t}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={mintReceipt}
+                disabled={step === "submitting"}
+                className="w-full bg-primary text-primary-foreground rounded px-4 py-2.5 text-xs font-mono font-bold flex items-center justify-center gap-2 hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                data-testid="demo-button-mint"
+              >
+                {step === "submitting" ? (
+                  <><RefreshCw className="w-3 h-3 animate-spin" />MINTING RECEIPT…</>
+                ) : (
+                  <><Shield className="w-3 h-3" />MINT RECEIPT<ArrowRight className="w-3 h-3" /></>
+                )}
+              </button>
+            </>
+          )}
+
+          {mode === "live" && (
+            <div className="space-y-3">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono">TYPE YOUR PROMPT — GEMINI 2.5 FLASH RESPONDS LIVE</div>
+
+              <textarea
+                value={livePrompt}
+                onChange={e => setLivePrompt(e.target.value)}
+                placeholder="Ask anything — e.g. 'Explain the EU AI Act in 3 bullets'"
+                rows={4}
+                className="w-full bg-card border border-border rounded p-3 text-xs font-mono text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none focus:border-primary/60 transition-colors"
+                data-testid="demo-live-prompt"
+              />
+
+              {!liveResponse && (
+                <button
+                  onClick={generateLiveResponse}
+                  disabled={!livePrompt.trim() || step === "generating"}
+                  className="w-full bg-amber-500 text-white rounded px-4 py-2.5 text-xs font-mono font-bold flex items-center justify-center gap-2 hover:bg-amber-600 disabled:opacity-50 transition-colors"
+                  data-testid="demo-button-generate"
+                >
+                  {step === "generating" ? (
+                    <><RefreshCw className="w-3 h-3 animate-spin" />ASKING GEMINI…</>
+                  ) : (
+                    <><Send className="w-3 h-3" />ASK GEMINI 2.5 FLASH</>
+                  )}
+                </button>
+              )}
+
+              {liveResponse && (
+                <>
+                  <div className="space-y-1">
+                    <div className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 text-amber-400" />
+                      LIVE GEMINI RESPONSE
+                    </div>
+                    <div className="bg-card border border-amber-500/30 rounded p-3 text-xs font-mono text-foreground leading-relaxed max-h-40 overflow-auto" data-testid="demo-live-response">
+                      {liveResponse}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setLiveResponse(""); setStep("choose"); }}
+                      className="flex-1 bg-card border border-border text-muted-foreground rounded px-3 py-2 text-xs font-mono font-bold hover:border-primary/40 transition-colors"
+                    >
+                      REGENERATE
+                    </button>
+                    <button
+                      onClick={mintReceipt}
+                      disabled={step === "submitting"}
+                      className="flex-2 flex-grow-[2] bg-primary text-primary-foreground rounded px-4 py-2 text-xs font-mono font-bold flex items-center justify-center gap-2 hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                      data-testid="demo-button-mint-live"
+                    >
+                      {step === "submitting" ? (
+                        <><RefreshCw className="w-3 h-3 animate-spin" />MINTING…</>
+                      ) : (
+                        <><Shield className="w-3 h-3" />MINT RECEIPT</>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -1,43 +1,3 @@
-/**
- * app.ts — Express application bootstrap.
- *
- * ─── AUTHENTICATION AND ORIGIN CONTROLS (defense-in-depth) ───────────────────
- *
- * 1. CORS ALLOWLIST (buildAllowedOrigins + cors middleware)
- *    Credentials are reflected ONLY to origins in an explicit allowlist built
- *    from REPLIT_DOMAINS and REPLIT_DEV_DOMAIN.  The previous `origin: true`
- *    reflected any caller-supplied Origin header.  Unrecognised origins receive
- *    no Access-Control-Allow-Origin and no Access-Control-Allow-Credentials.
- *
- * 2. CSRF ORIGIN GUARD (sameOriginGuard middleware)
- *    CORS alone does not protect against CSRF from same-site sibling origins
- *    because cookies with SameSite=Lax are still sent on same-site cross-origin
- *    top-level navigations and the CORS preflight only applies to "non-simple"
- *    requests.  Simple application/x-www-form-urlencoded POSTs, for example,
- *    do not trigger a preflight even under the CORS spec.
- *
- *    The sameOriginGuard middleware addresses this by independently validating
- *    the Origin (and Referer as a fallback) header for:
- *      - All state-changing methods: POST, PUT, PATCH, DELETE
- *      - GET /api/logout — clears the server-side session (state-changing despite GET)
- *
- *    Any request with an Origin or Referer header that is NOT in the allowlist
- *    is rejected with 403 before reaching any route handler.
- *
- *    Requests with no Origin and no Referer (server-to-server, CLI tools, and
- *    React Native mobile fetch) are allowed through because the browser always
- *    includes Origin for cross-origin requests; its absence indicates a
- *    same-origin or non-browser client.
- *
- * 3. OIDC REDIRECT-URI PINNING (auth.ts — getCanonicalOrigin)
- *    redirect_uri and post_logout_redirect_uri are derived from env vars only,
- *    never from attacker-controllable request headers.
- *
- * 4. MOBILE SECURE TOKEN STORAGE (aigovops-mobile AuthContext.tsx)
- *    Bearer session tokens are stored in expo-secure-store (iOS Keychain /
- *    Android Keystore) rather than unencrypted AsyncStorage.
- * ─────────────────────────────────────────────────────────────────────────────
- */
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -50,17 +10,25 @@ import { logger } from "./lib/logger";
 const app: Express = express();
 
 /**
- * Build the CORS/CSRF origin allowlist from environment variables set by Replit.
+ * Build the CORS/CSRF origin allowlist from environment variables.
  *
- * - REPLIT_DOMAINS: comma-separated production domains (e.g. "foo.replit.app")
- * - REPLIT_DEV_DOMAIN: the per-Repl development preview hostname
+ * Sources (in priority order):
+ *   APP_ORIGIN      — explicit operator override for custom domains
+ *   REPLIT_DOMAINS  — comma-separated production domains set by the platform
+ *   REPLIT_DEV_DOMAIN — per-Repl development preview hostname
+ *   localhost/127.x — allowed only in non-production environments
  *
  * Any unrecognised origin is silently blocked; credentials are never
- * reflected to arbitrary origins, closing the cross-origin credentialed
- * request vector described in the security scan.
+ * reflected to arbitrary origins.
  */
 function buildAllowedOrigins(): (string | RegExp)[] {
   const origins: (string | RegExp)[] = [];
+
+  // Explicit operator-configured custom domain (also used by getCanonicalOrigin).
+  const appOrigin = process.env.APP_ORIGIN;
+  if (appOrigin) {
+    origins.push(appOrigin.replace(/\/$/, ""));
+  }
 
   const replitDomains = process.env.REPLIT_DOMAINS;
   if (replitDomains) {
@@ -84,7 +52,6 @@ function buildAllowedOrigins(): (string | RegExp)[] {
 
 const allowedOrigins = buildAllowedOrigins();
 
-/** Returns true when the given origin string is in the allowlist. */
 function isAllowedOrigin(origin: string): boolean {
   return allowedOrigins.some(a =>
     typeof a === "string" ? a === origin : a.test(origin),
@@ -94,26 +61,18 @@ function isAllowedOrigin(origin: string): boolean {
 /**
  * CSRF / same-origin guard for state-changing requests.
  *
- * Validates the Origin header (Referer as fallback) against allowedOrigins for:
- *   - POST, PUT, PATCH, DELETE (state-changing HTTP methods)
- *   - GET /api/logout (clears the server-side session — state-changing despite GET)
+ * Validates Origin (or Referer as fallback) against the allowlist for
+ * POST/PUT/PATCH/DELETE and GET /api/logout. CORS alone is insufficient
+ * because SameSite=Lax cookies are still sent on same-site cross-origin
+ * navigations, and simple form POSTs do not trigger a CORS preflight.
  *
- * Why Origin header validation works for CSRF:
- *   Browsers always include Origin on cross-origin requests that could carry
- *   cookies.  A same-site sibling origin would include its own origin in the
- *   header, and if that origin is not in the allowlist this middleware rejects
- *   the request before any route handler sees it — even for simple
- *   application/x-www-form-urlencoded POSTs that would not trigger a CORS
- *   preflight.
- *
- * Non-browser clients (curl, scripts, React Native mobile fetch) do not send
- * Origin or Referer, so they are allowed through.  These clients cannot exploit
- * CSRF because they cannot read or replay browser cookies.
+ * Requests with no Origin/Referer (CLI, server-to-server, mobile native
+ * fetch) are allowed through — browsers always include Origin for
+ * cross-site requests that carry cookies.
  */
 function sameOriginGuard(req: Request, res: Response, next: NextFunction): void {
   const method = req.method.toUpperCase();
   const isStateChanging = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-  // GET /api/logout clears the session — protect it too.
   const isLogoutGet = method === "GET" && req.path.startsWith("/api/logout");
 
   if (!isStateChanging && !isLogoutGet) {
@@ -121,8 +80,7 @@ function sameOriginGuard(req: Request, res: Response, next: NextFunction): void 
     return;
   }
 
-  // If there are no allowed origins configured (e.g. bare local dev without env
-  // vars), skip enforcement rather than locking out all clients.  Log a warning.
+  // Skip enforcement if allowlist is empty (bare local dev with no env vars).
   if (allowedOrigins.length === 0) {
     logger.warn("sameOriginGuard: allowedOrigins is empty — skipping enforcement");
     next();
@@ -130,10 +88,7 @@ function sameOriginGuard(req: Request, res: Response, next: NextFunction): void 
   }
 
   const origin = req.headers.origin;
-
   if (origin) {
-    // Browsers always send Origin for cross-origin requests with state-changing
-    // methods.  If it is not in the allowlist, reject immediately.
     if (!isAllowedOrigin(origin)) {
       res.status(403).json({ error: "Forbidden: request origin not permitted" });
       return;
@@ -142,15 +97,13 @@ function sameOriginGuard(req: Request, res: Response, next: NextFunction): void 
     return;
   }
 
-  // No Origin header — check Referer as a secondary signal (older browsers,
-  // some redirected requests, and certain proxy configurations).
+  // No Origin — check Referer as secondary signal.
   const referer = req.headers.referer;
   if (referer) {
     let refOrigin: string;
     try {
       refOrigin = new URL(referer).origin;
     } catch {
-      // Malformed Referer — reject to be safe.
       res.status(403).json({ error: "Forbidden: malformed Referer header" });
       return;
     }
@@ -160,10 +113,6 @@ function sameOriginGuard(req: Request, res: Response, next: NextFunction): void 
     }
   }
 
-  // No Origin or Referer — allow.  This covers:
-  //   • Same-origin browser requests (browser omits Origin on same-origin GETs)
-  //   • Server-to-server / CLI requests (curl, scripts, health checks)
-  //   • React Native mobile fetch (does not send Origin/Referer)
   next();
 }
 
@@ -231,9 +180,7 @@ const heavyReadLimiter = rateLimit({
 app.use(globalLimiter);
 app.use(["/api/stats", "/api/interactions", "/api/chain"], heavyReadLimiter);
 
-// CSRF / same-origin guard — must run after cookieParser so cookies are readable
-// (for future cookie-presence checks), and before authMiddleware + routes so that
-// malicious requests are rejected before any session or DB access occurs.
+// CSRF / same-origin guard: runs after cookieParser, before auth and routes.
 app.use(sameOriginGuard);
 
 app.use(authMiddleware);
