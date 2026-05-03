@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AuditChainStatus,
   AuthUserEnvelope,
   BeginBrowserLoginParams,
   BrowserLogoutSuccess,
@@ -1640,6 +1641,83 @@ export function useGetChain<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetChainQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Admin-only. Walks all activity_log entries that have a logHash (post-migration rows) in chronological order and re-derives each entry's expected logHash from its stored fields and the expected prevLogHash from the chain walk. Any mismatch — tampered data fields, deleted rows, reordered entries, or modified hashes — increments the tampered counter. Pre-migration rows with NULL logHash are counted in `total` but excluded from verification.
+
+ * @summary Verify the integrity of the audit log hash chain
+ */
+export const getGetAuditChainStatusUrl = () => {
+  return `/api/audit/chain-status`;
+};
+
+export const getAuditChainStatus = async (
+  options?: RequestInit,
+): Promise<AuditChainStatus> => {
+  return customFetch<AuditChainStatus>(getGetAuditChainStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAuditChainStatusQueryKey = () => {
+  return [`/api/audit/chain-status`] as const;
+};
+
+export const getGetAuditChainStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAuditChainStatus>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAuditChainStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAuditChainStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAuditChainStatus>>
+  > = ({ signal }) => getAuditChainStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAuditChainStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAuditChainStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAuditChainStatus>>
+>;
+export type GetAuditChainStatusQueryError = ErrorType<void>;
+
+/**
+ * @summary Verify the integrity of the audit log hash chain
+ */
+
+export function useGetAuditChainStatus<
+  TData = Awaited<ReturnType<typeof getAuditChainStatus>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAuditChainStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAuditChainStatusQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

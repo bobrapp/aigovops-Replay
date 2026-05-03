@@ -70,6 +70,7 @@ import {
 import { hashPrompt, hashResponse, buildChainHash } from "../lib/crypto";
 import { generateId } from "../lib/id";
 import { evalPolicyRule } from "../lib/policy-eval";
+import { insertActivityLog } from "../lib/activity-log";
 import { requireAuth } from "../middlewares/requireAuth";
 
 /** requireAuth guarantees req.user is set; this helper narrows the type. */
@@ -347,8 +348,7 @@ router.post("/interactions", requireAuth, mintRateLimiter, async (req, res) => {
     }
   }
 
-  await db.insert(activityLogTable).values({
-    id: generateId(),
+  await insertActivityLog({
     type: "created",
     interactionId: id,
     summary: `Receipt minted: ${body.model} — ${body.prompt.slice(0, 60)}`,
@@ -475,8 +475,7 @@ router.get("/interactions/:id/verify", requireAuth, async (req, res) => {
   if (lineageForked) failReasons.push("fork detected in ancestry: this receipt descends from a split chain");
   if (multipleGenesisNodes) failReasons.push("multiple genesis entries: chain root is ambiguous");
 
-  await db.insert(activityLogTable).values({
-    id: generateId(),
+  await insertActivityLog({
     type: "verified",
     interactionId: id,
     summary: `Receipt verified: ${valid ? "PASS" : "FAIL"} — ${id.slice(0, 16)}`,
@@ -570,8 +569,7 @@ router.post("/interactions/:id/replay", requireAuth, async (req, res) => {
     });
   });
 
-  await db.insert(activityLogTable).values({
-    id: generateId(),
+  await insertActivityLog({
     type: "replayed",
     interactionId: id,
     summary: `Replayed: ${id.slice(0, 16)} → new receipt ${newId.slice(0, 16)}`,

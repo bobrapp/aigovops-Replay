@@ -266,6 +266,26 @@ export interface Stats {
   chainIntact: boolean;
 }
 
+/**
+ * Integrity status of the activity_log hash chain. Entries with NULL logHash (pre-migration legacy rows) are counted in `total` but excluded from `hashableEntries` and hash verification.
+
+ */
+export interface AuditChainStatus {
+  /** Total activity_log rows (including pre-migration rows without hashes) */
+  total: number;
+  /** Rows with a logHash that participate in chain verification */
+  hashableEntries: number;
+  /** True only when all hashable entries re-verify correctly in sequence. False if any entry's logHash does not match the re-derived expected hash.
+   */
+  intact: boolean;
+  /** Count of hashable entries that failed hash verification */
+  tampered: number;
+  /** logHash of the most recent hashable entry; null if no hashed entries exist */
+  headHash?: string | null;
+  /** Timestamp of when this verification was performed */
+  verifiedAt: string;
+}
+
 export type ChainSummaryEntriesItem = {
   id: string;
   chainHash: string;

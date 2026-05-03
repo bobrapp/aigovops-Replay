@@ -467,3 +467,40 @@ export const GetChainResponse = zod.object({
       "Most recent receipts (up to 100) for display. Integrity is verified over the full chain.",
     ),
 });
+
+/**
+ * Admin-only. Walks all activity_log entries that have a logHash (post-migration rows) in chronological order and re-derives each entry's expected logHash from its stored fields and the expected prevLogHash from the chain walk. Any mismatch — tampered data fields, deleted rows, reordered entries, or modified hashes — increments the tampered counter. Pre-migration rows with NULL logHash are counted in `total` but excluded from verification.
+
+ * @summary Verify the integrity of the audit log hash chain
+ */
+export const GetAuditChainStatusResponse = zod
+  .object({
+    total: zod
+      .number()
+      .describe(
+        "Total activity_log rows (including pre-migration rows without hashes)",
+      ),
+    hashableEntries: zod
+      .number()
+      .describe("Rows with a logHash that participate in chain verification"),
+    intact: zod
+      .boolean()
+      .describe(
+        "True only when all hashable entries re-verify correctly in sequence. False if any entry's logHash does not match the re-derived expected hash.\n",
+      ),
+    tampered: zod
+      .number()
+      .describe("Count of hashable entries that failed hash verification"),
+    headHash: zod
+      .string()
+      .nullish()
+      .describe(
+        "logHash of the most recent hashable entry; null if no hashed entries exist",
+      ),
+    verifiedAt: zod.coerce
+      .date()
+      .describe("Timestamp of when this verification was performed"),
+  })
+  .describe(
+    "Integrity status of the activity_log hash chain. Entries with NULL logHash (pre-migration legacy rows) are counted in `total` but excluded from `hashableEntries` and hash verification.\n",
+  );

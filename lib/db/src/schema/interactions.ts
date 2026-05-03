@@ -72,6 +72,23 @@ export const activityLogTable = pgTable("activity_log", {
   interactionId: text("interaction_id").notNull(),
   summary: text("summary").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  /**
+   * logHash integrity chain — makes the audit log tamper-evident.
+   *
+   * prevLogHash: logHash of the immediately preceding activity_log row
+   *   (globally; the audit chain is a single shared sequence, not per-user).
+   *   NULL for the genesis entry and for pre-migration legacy rows.
+   *
+   * logHash: sha256("log:" + type + ":" + interactionId + ":" + summary
+   *           + ":" + createdAt.toISOString() + ":" + prevLogHash|"GENESIS")
+   *   Nullable for backward compatibility — pre-migration rows without hashes
+   *   are skipped (not failed) during chain verification.
+   *
+   * Inserts must be serialized via pg_advisory_xact_lock to prevent races
+   * on the prevLogHash lookup (see lib/activity-log.ts).
+   */
+  prevLogHash: text("prev_log_hash"),
+  logHash: text("log_hash"),
 });
 
 export type ActivityLog = typeof activityLogTable.$inferSelect;
