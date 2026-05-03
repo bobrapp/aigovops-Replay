@@ -356,7 +356,8 @@ function HTML_FOOT(count: number, date: string): string {
       ? '<span class="hash-val">'+esc(r.prevHash.slice(0,52))+'&hellip;</span>'
       : '<span class="hash-val genesis">genesis</span>';
     // Display first 300 chars of prompt in card; full data is in the JSON blob.
-    var promptDisplay = r.prompt.length > 300 ? r.prompt.slice(0,300)+'&hellip;' : esc(r.prompt);
+    // Always escape AFTER slicing so user-controlled HTML/JS cannot execute.
+    var promptDisplay = r.prompt.length > 300 ? esc(r.prompt.slice(0,300))+'&hellip;' : esc(r.prompt);
     return '<div class="card '+(ok?'ok':'bad')+'" data-model="'+esc(r.model)+'" data-prompt="'+esc(r.prompt.slice(0,200))+'" data-id="'+esc(r.id)+'">'+
       '<div class="card-header">'+
         '<span class="idx">#'+(globalIdx+1)+'</span>'+
