@@ -1,0 +1,24 @@
+-- Migration: add hash-chain columns to activity_log
+--
+-- This is an additive ALTER migration designed for an existing database.
+-- Both columns are added as nullable first so that:
+--   1. Existing rows without hashes can coexist (they are skipped, not failed,
+--      during chain verification in GET /api/audit/chain-status).
+--   2. A separate backfill step (or the next deploy) can populate the columns
+--      and, once all rows are hashed, optionally add NOT NULL to log_hash.
+--
+-- prev_log_hash: logHash of the immediately preceding activity_log row in
+--   chronological insertion order. NULL for the genesis entry.
+--
+-- log_hash: sha256("log:" + type + ":" + interactionId + ":" + summary
+--           + ":" + createdAt.toISOString() + ":" + prevLogHash|"GENESIS")
+--   Derives a tamper-evident hash that binds each entry to its content,
+--   timestamp, and predecessor. NULL for pre-migration legacy rows.
+--
+-- Inserts are serialized via pg_advisory_xact_lock (key 0x4C4F4748) in
+-- artifacts/api-server/src/lib/activity-log.ts to prevent races on the
+-- prevLogHash lookup. The DB-generated created_at timestamp (returned from
+-- the INSERT ... RETURNING clause) is used for hashing so that the stored
+-- timestamp and the hashed timestamp always match.
+ALTER TABLE "activity_log" ADD COLUMN IF NOT EXISTS "prev_log_hash" text;
+ALTER TABLE "activity_log" ADD COLUMN IF NOT EXISTS "log_hash" text;
