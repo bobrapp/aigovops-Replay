@@ -10,12 +10,13 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useAuth } from "@workspace/replit-auth-web";
 import { Form, FormField, FormItem, FormControl, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { CheckCircle2, Loader2, ChevronRight, ChevronLeft, Mic, Info, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, Loader2, ChevronRight, ChevronLeft, Mic, Info, Sparkles, ChevronDown, ChevronUp, Lock, Shield, ArrowRight } from "lucide-react";
 
 // ─── Sample interactions users can load in one click ─────────────────────────
 
@@ -172,11 +173,14 @@ function InfoTip({ children }: { children: React.ReactNode }) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function SimpleRecord() {
+  const { login } = useAuth();
   const [step, setStep] = useState(0);
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [minted, setMinted] = useState<{ id: string } | null>(null);
   const [minting, setMinting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [needsAuth, setNeedsAuth] = useState(false);
   const [samplesOpen, setSamplesOpen] = useState(true);
 
   const form = useForm<FormValues>({
@@ -192,8 +196,20 @@ export default function SimpleRecord() {
         queryClient.invalidateQueries({ queryKey: getGetChainQueryKey() });
         setMinted({ id: data.id });
         setMinting(false);
+        setSubmitError(null);
+        setNeedsAuth(false);
       },
-      onError: () => setMinting(false),
+      onError: (error: unknown) => {
+        setMinting(false);
+        const status = (error as { status?: number })?.status;
+        if (status === 401) {
+          setNeedsAuth(true);
+          setSubmitError(null);
+        } else {
+          setNeedsAuth(false);
+          setSubmitError(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+        }
+      },
     },
   });
 
@@ -448,6 +464,34 @@ export default function SimpleRecord() {
                     </FormItem>
                   )}
                 />
+              </div>
+            )}
+
+            {/* Auth / error feedback — shown on last step */}
+            {step === STEPS.length - 1 && needsAuth && (
+              <div className="rounded-xl border border-amber-400/40 bg-amber-50 p-3.5 flex gap-3 items-start">
+                <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-bold text-amber-800 mb-0.5">Sign in to save recordings</div>
+                  <div className="text-xs text-amber-700 leading-relaxed mb-2.5">
+                    Creating cryptographic receipts requires a free account. It takes about 5 seconds.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={login}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
+                    data-testid="record-signin-btn"
+                  >
+                    <Shield className="w-3 h-3" />
+                    Sign in with Replit
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+            {step === STEPS.length - 1 && submitError && !needsAuth && (
+              <div className="rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-xs text-red-700" data-testid="record-submit-error">
+                {submitError}
               </div>
             )}
 

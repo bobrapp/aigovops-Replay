@@ -9,6 +9,10 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+// Trust the reverse proxy (Replit's shared proxy sets X-Forwarded-For).
+// Required for express-rate-limit to correctly identify client IPs.
+app.set("trust proxy", 1);
+
 /**
  * Build the CORS/CSRF origin allowlist from environment variables.
  *

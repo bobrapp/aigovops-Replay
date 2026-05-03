@@ -1,5 +1,5 @@
 import { useGetStats, useGetChain, useListInteractions } from "@workspace/api-client-react";
-import { Shield, CheckCircle, XCircle, RefreshCw, Link2, Activity, Clock, Zap, ArrowRight, Bot, Stamp } from "lucide-react";
+import { Shield, CheckCircle, XCircle, RefreshCw, Link2, Activity, Clock, Zap, ArrowRight, Bot, Stamp, BookOpen } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -97,6 +97,21 @@ export default function Dashboard() {
 
       {/* CTA row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Link href="/tutorial">
+          <div className="flex items-center justify-between border-2 border-primary/40 rounded-xl px-4 py-3 cursor-pointer hover:border-primary/70 transition-all group" style={{ background: "linear-gradient(135deg,#1B3B6F08,#10B98108)" }} data-testid="dashboard-tutorial-cta">
+            <div className="flex items-center gap-3">
+              <BookOpen className="w-4 h-4 text-primary flex-shrink-0" />
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <div className="text-sm font-bold text-foreground">Tutorial</div>
+                  <span className="text-[9px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full uppercase tracking-wide">Start here</span>
+                </div>
+                <div className="text-[11px] text-muted-foreground">Paste → mint → verify → replay</div>
+              </div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-primary group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </Link>
         <Link href="/demo">
           <div className="flex items-center justify-between border-2 border-amber-200 bg-amber-50 rounded-xl px-4 py-3 cursor-pointer hover:border-amber-400 hover:bg-amber-100 transition-all group">
             <div className="flex items-center gap-3">

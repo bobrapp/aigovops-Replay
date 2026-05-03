@@ -244,7 +244,7 @@ export default function TutorialPage() {
   const [replayDone, setReplayDone] = useState(false);
   const [replayResponse, setReplayResponse] = useState<string | null>(null);
 
-  const [samplesOpen, setSamplesOpen] = useState(false);
+  const [samplesOpen, setSamplesOpen] = useState(true);
 
   function loadSample(s: typeof SAMPLES[0]) {
     setPrompt(s.prompt);

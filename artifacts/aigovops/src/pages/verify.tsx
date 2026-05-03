@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useGetInteraction, useVerifyInteraction, getGetInteractionQueryKey } from "@workspace/api-client-react";
-import { Search, CheckCircle, XCircle, Loader2, Shield } from "lucide-react";
+import { Search, CheckCircle, XCircle, Loader2, Shield, Info } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 
 function VerifyStep({ label, ok }: { label: string; ok: boolean }) {
   return (
@@ -67,6 +68,17 @@ export default function VerifyReceipt() {
         <Button onClick={handleVerify} disabled={checking || !receiptId.trim()} className="gap-2 font-semibold" data-testid="button-run-verify">
           {checking ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Checking…</> : <><Search className="w-3.5 h-3.5" />Verify</>}
         </Button>
+      </div>
+
+      <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 flex items-start gap-2.5">
+        <Info className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          The receipt ID is the unique identifier shown after minting — find it in{" "}
+          <Link href="/history" className="text-primary underline underline-offset-2 hover:opacity-80">My Recordings</Link>
+          {" "}or complete the{" "}
+          <Link href="/tutorial" className="text-primary underline underline-offset-2 hover:opacity-80">step-by-step tutorial</Link>
+          {" "}to mint one now.
+        </p>
       </div>
 
       {interaction && (
