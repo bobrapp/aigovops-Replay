@@ -20,6 +20,8 @@ tags:
     description: Dashboard statistics
   - name: audit
     description: Admin-only audit log integrity operations
+  - name: export
+    description: Portable chain export endpoints (JSONL, HTML bundle, SQLite)
 paths:
   /auth/user:
     get:
@@ -436,6 +438,83 @@ paths:
           description: Unauthorized — admin session required
         "503":
           description: Service unavailable — ADMIN_API_KEY not configured
+
+  /export/jsonl:
+    get:
+      operationId: exportChainJsonl
+      tags: [export]
+      summary: Export the full receipt chain as JSONL
+      description: >
+        Streams the authenticated user's receipts as newline-delimited JSON (one
+        object per line), ordered oldest-first. Each line contains all receipt
+        fields including hashes. The file is chunked so very large chains are
+        never fully buffered in memory. Filename pattern:
+        aigovops-chain-{userId}-{date}.jsonl
+      responses:
+        "200":
+          description: JSONL stream of receipts
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: attachment; filename="aigovops-chain-{userId}-{date}.jsonl"
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+        "401":
+          description: Unauthorized — authentication required
+
+  /export/html:
+    get:
+      operationId: exportChainHtml
+      tags: [export]
+      summary: Export the receipt chain as a self-contained HTML bundle
+      description: >
+        Returns a single .html file with all receipts rendered as cards plus
+        embedded JavaScript that re-derives every chainHash client-side on load
+        and shows a green "Chain intact" or red "Tampered" banner. No external
+        dependencies. Filename pattern: aigovops-chain-{userId}-{date}.html
+      responses:
+        "200":
+          description: Self-contained HTML bundle
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: attachment; filename="aigovops-chain-{userId}-{date}.html"
+          content:
+            text/html:
+              schema:
+                type: string
+        "401":
+          description: Unauthorized — authentication required
+
+  /export/sqlite:
+    get:
+      operationId: exportChainSqlite
+      tags: [export]
+      summary: Export the receipt chain as a SQLite database
+      description: >
+        Returns a .db file containing an interactions table populated with all
+        of the requesting user's receipts. Compatible with the sqlite3 CLI and
+        DB Browser for SQLite. Filename pattern:
+        aigovops-chain-{userId}-{date}.db
+      responses:
+        "200":
+          description: SQLite database file
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: attachment; filename="aigovops-chain-{userId}-{date}.db"
+          content:
+            application/x-sqlite3:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Unauthorized — authentication required
 
 security:
   - bearerAuth: []

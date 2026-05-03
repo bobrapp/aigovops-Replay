@@ -1,29 +1,95 @@
 import { useGetChain } from "@workspace/api-client-react";
-import { Link2, CheckCircle, XCircle } from "lucide-react";
+import { Link2, CheckCircle, XCircle, Download, ChevronDown } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link as WouterLink } from "wouter";
+import { useState, useRef, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+
+const EXPORT_FORMATS = [
+  { label: "JSONL", ext: "jsonl", path: "/api/export/jsonl", desc: "One JSON object per line — for programmatic use" },
+  { label: "HTML Bundle", ext: "html", path: "/api/export/html", desc: "Self-contained file with embedded chain verifier" },
+  { label: "SQLite", ext: "db", path: "/api/export/sqlite", desc: "Offline-queryable with sqlite3 or DB Browser" },
+] as const;
+
+function DownloadDropdown() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-2 font-semibold"
+        onClick={() => setOpen((v) => !v)}
+        data-testid="button-download-chain"
+        aria-haspopup="true"
+        aria-expanded={open}
+      >
+        <Download className="w-4 h-4" />
+        Download chain
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} />
+      </Button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg w-72 overflow-hidden">
+          {EXPORT_FORMATS.map((fmt) => (
+            <a
+              key={fmt.ext}
+              href={fmt.path}
+              download
+              className="flex items-start gap-3 px-4 py-3 hover:bg-muted transition-colors group"
+              onClick={() => setOpen(false)}
+              data-testid={`download-${fmt.ext}`}
+            >
+              <div className="mt-0.5 w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+                <Download className="w-3.5 h-3.5 text-primary" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-foreground">{fmt.label}</div>
+                <div className="text-xs text-muted-foreground leading-snug mt-0.5">{fmt.desc}</div>
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ChainView() {
   const { data: chain, isLoading } = useGetChain();
 
   return (
     <div className="space-y-6" data-testid="chain-page">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "#1B3B6F" }}>
-          <Link2 className="w-4 h-4 text-white" />
-        </div>
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold text-foreground">Hash Chain</h1>
-            {chain && (
-              <span className={`flex items-center gap-1.5 text-sm font-semibold ${chain.intact ? "text-emerald-600" : "text-red-600"}`} data-testid="chain-integrity-badge">
-                {chain.intact ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                {chain.intact ? "Intact" : "Broken"}
-              </span>
-            )}
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "#1B3B6F" }}>
+            <Link2 className="w-4 h-4 text-white" />
           </div>
-          <p className="text-sm text-muted-foreground">Tamper-evident append-only log</p>
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl font-bold text-foreground">Hash Chain</h1>
+              {chain && (
+                <span className={`flex items-center gap-1.5 text-sm font-semibold ${chain.intact ? "text-emerald-600" : "text-red-600"}`} data-testid="chain-integrity-badge">
+                  {chain.intact ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                  {chain.intact ? "Intact" : "Broken"}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">Tamper-evident append-only log</p>
+          </div>
         </div>
+        <DownloadDropdown />
       </div>
 
       {chain && (

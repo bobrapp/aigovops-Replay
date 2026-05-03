@@ -6,6 +6,7 @@ import auditRouter from "./audit";
 import interactionsRouter from "./interactions";
 import policiesRouter from "./policies";
 import aiRouter from "./ai";
+import exportRouter from "./export";
 const router: IRouter = Router();
 
 router.use(healthRouter);
@@ -15,5 +16,6 @@ router.use(auditRouter);
 router.use(interactionsRouter);
 router.use(policiesRouter);
 router.use(aiRouter);
+router.use(exportRouter);
 
 export default router;

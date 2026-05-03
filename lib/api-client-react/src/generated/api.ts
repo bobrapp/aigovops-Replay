@@ -1725,3 +1725,234 @@ export function useGetAuditChainStatus<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Streams the authenticated user's receipts as newline-delimited JSON (one object per line), ordered oldest-first. Each line contains all receipt fields including hashes. The file is chunked so very large chains are never fully buffered in memory. Filename pattern: aigovops-chain-{userId}-{date}.jsonl
+
+ * @summary Export the full receipt chain as JSONL
+ */
+export const getExportChainJsonlUrl = () => {
+  return `/api/export/jsonl`;
+};
+
+export const exportChainJsonl = async (
+  options?: RequestInit,
+): Promise<Response> => {
+  return customFetch<Response>(getExportChainJsonlUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportChainJsonlQueryKey = () => {
+  return [`/api/export/jsonl`] as const;
+};
+
+export const getExportChainJsonlQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportChainJsonl>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof exportChainJsonl>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getExportChainJsonlQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportChainJsonl>>
+  > = ({ signal }) => exportChainJsonl({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportChainJsonl>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportChainJsonlQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportChainJsonl>>
+>;
+export type ExportChainJsonlQueryError = ErrorType<void>;
+
+/**
+ * @summary Export the full receipt chain as JSONL
+ */
+
+export function useExportChainJsonl<
+  TData = Awaited<ReturnType<typeof exportChainJsonl>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof exportChainJsonl>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportChainJsonlQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns a single .html file with all receipts rendered as cards plus embedded JavaScript that re-derives every chainHash client-side on load and shows a green "Chain intact" or red "Tampered" banner. No external dependencies. Filename pattern: aigovops-chain-{userId}-{date}.html
+
+ * @summary Export the receipt chain as a self-contained HTML bundle
+ */
+export const getExportChainHtmlUrl = () => {
+  return `/api/export/html`;
+};
+
+export const exportChainHtml = async (
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExportChainHtmlUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportChainHtmlQueryKey = () => {
+  return [`/api/export/html`] as const;
+};
+
+export const getExportChainHtmlQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportChainHtml>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof exportChainHtml>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getExportChainHtmlQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof exportChainHtml>>> = ({
+    signal,
+  }) => exportChainHtml({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportChainHtml>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportChainHtmlQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportChainHtml>>
+>;
+export type ExportChainHtmlQueryError = ErrorType<void>;
+
+/**
+ * @summary Export the receipt chain as a self-contained HTML bundle
+ */
+
+export function useExportChainHtml<
+  TData = Awaited<ReturnType<typeof exportChainHtml>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof exportChainHtml>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportChainHtmlQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns a .db file containing an interactions table populated with all of the requesting user's receipts. Compatible with the sqlite3 CLI and DB Browser for SQLite. Filename pattern: aigovops-chain-{userId}-{date}.db
+
+ * @summary Export the receipt chain as a SQLite database
+ */
+export const getExportChainSqliteUrl = () => {
+  return `/api/export/sqlite`;
+};
+
+export const exportChainSqlite = async (
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getExportChainSqliteUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportChainSqliteQueryKey = () => {
+  return [`/api/export/sqlite`] as const;
+};
+
+export const getExportChainSqliteQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportChainSqlite>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof exportChainSqlite>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getExportChainSqliteQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportChainSqlite>>
+  > = ({ signal }) => exportChainSqlite({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportChainSqlite>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportChainSqliteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportChainSqlite>>
+>;
+export type ExportChainSqliteQueryError = ErrorType<void>;
+
+/**
+ * @summary Export the receipt chain as a SQLite database
+ */
+
+export function useExportChainSqlite<
+  TData = Awaited<ReturnType<typeof exportChainSqlite>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof exportChainSqlite>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportChainSqliteQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
