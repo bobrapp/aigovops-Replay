@@ -3,15 +3,16 @@ import {
   Shield, FileText, Link2, ShieldAlert, CheckCircle,
   Database, Search, Menu, X, BookOpen, Zap, Bot,
   Mic, Clock, Gauge, ChevronRight, ChevronDown, ChevronUp,
-  Heart, ExternalLink, LogIn
+  Heart, ExternalLink, LogIn, GraduationCap
 } from "lucide-react";
 import { ReactNode, useState } from "react";
 import { useMode } from "@/context/mode";
 import { useAuth } from "@workspace/replit-auth-web";
 
 const expertNav = [
+  { label: "Tutorial", href: "/tutorial", icon: GraduationCap, group: "main", highlight: true },
   { label: "Dashboard", href: "/", icon: Database, group: "main" },
-  { label: "Live Demo", href: "/demo", icon: Zap, group: "main", highlight: true },
+  { label: "Live Demo", href: "/demo", icon: Zap, group: "main" },
   { label: "Receipts", href: "/receipts", icon: FileText, group: "audit" },
   { label: "Mint Receipt", href: "/receipts/new", icon: CheckCircle, group: "audit" },
   { label: "Agents", href: "/agents", icon: Bot, group: "audit" },
@@ -22,6 +23,7 @@ const expertNav = [
 ];
 
 const simpleNav = [
+  { label: "Tutorial", href: "/tutorial", icon: GraduationCap, highlight: true },
   { label: "Home", href: "/", icon: Shield },
   { label: "Record a Chat", href: "/record", icon: Mic },
   { label: "My Recordings", href: "/history", icon: Clock },

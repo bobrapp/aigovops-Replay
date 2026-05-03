@@ -1,6 +1,6 @@
 import { useGetStats, useGetChain } from "@workspace/api-client-react";
 import { Link } from "wouter";
-import { Shield, CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
+import { Shield, CheckCircle, XCircle, Clock, AlertTriangle, ChevronRight } from "lucide-react";
 
 function BigActionTile({
   emoji,
@@ -116,6 +116,27 @@ export default function SimpleHome() {
           </div>
         </div>
       )}
+
+      {/* Tutorial tile — full width, prominent */}
+      <Link href="/tutorial">
+        <div
+          className="rounded-2xl p-5 cursor-pointer transition-all active:scale-95 hover:shadow-lg border-2 border-primary/40 flex items-center gap-4 select-none"
+          style={{ background: "linear-gradient(135deg,#1B3B6F12,#10B98112)" }}
+          data-testid="simple-action-tutorial"
+        >
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg,#1B3B6F,#10B981)" }}>
+            <span className="text-2xl leading-none">📖</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="text-base font-bold text-foreground">Step-by-Step Tutorial</div>
+              <span className="text-[10px] font-bold bg-primary text-primary-foreground px-2 py-0.5 rounded-full uppercase tracking-wide">Start here</span>
+            </div>
+            <div className="text-sm text-muted-foreground mt-0.5">Paste sample → mint receipt → verify → replay</div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+        </div>
+      </Link>
 
       {/* Big action tiles */}
       <div className="grid grid-cols-2 gap-3">

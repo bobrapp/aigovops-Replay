@@ -10,6 +10,7 @@ import { AdminAuthProvider } from "./context/adminAuth";
 import { useAuth } from "@workspace/replit-auth-web";
 import { Shield, Gauge, ChevronRight, ArrowRight } from "lucide-react";
 import { useState } from "react";
+import TutorialPage from "./pages/tutorial";
 
 // Expert pages
 import Dashboard from "./pages/dashboard";
@@ -239,6 +240,7 @@ function Router() {
         <Route path="/policies/new" component={CreatePolicy} />
         <Route path="/verify" component={VerifyReceipt} />
         <Route path="/spec" component={SpecPage} />
+        <Route path="/tutorial" component={TutorialPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

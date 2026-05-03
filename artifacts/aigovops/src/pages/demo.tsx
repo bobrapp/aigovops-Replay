@@ -1,12 +1,13 @@
 import { useState } from "react";
 import {
   Shield, ArrowRight, CheckCircle, RefreshCw, Hash, User, Clock,
-  ChevronRight, Zap, Sparkles, Send, Info, Eye, EyeOff, AlertTriangle
+  ChevronRight, Zap, Sparkles, Send, Info, Eye, EyeOff, AlertTriangle, Lock
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocation } from "wouter";
+import { useAuth } from "@workspace/replit-auth-web";
 
 // ─── Scenario data ────────────────────────────────────────────────────────────
 
@@ -236,6 +237,28 @@ function HashDisplay({ label, value, tooltip }: { label: string; value: string; 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+function GuestPrompt({ onLogin }: { onLogin: () => void }) {
+  return (
+    <div className="rounded-xl border border-amber-400/40 bg-amber-50 p-4 flex gap-3 items-start">
+      <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+      <div>
+        <div className="text-sm font-bold text-amber-800 mb-0.5">Sign in to mint receipts</div>
+        <div className="text-xs text-amber-700 leading-relaxed mb-3">
+          You're browsing as a guest. Creating cryptographic receipts requires a free account — sign in with Replit to continue.
+        </div>
+        <button
+          onClick={onLogin}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
+        >
+          <Shield className="w-3.5 h-3.5" />
+          Sign in with Replit
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 type Mode = "preset" | "live";
 type Step = "choose" | "generating" | "submitting" | "receipt" | "verifying" | "verified" | "replaying" | "replayed";
 
@@ -256,6 +279,7 @@ interface Receipt {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function DemoPage() {
+  const { login } = useAuth();
   const [mode, setMode] = useState<Mode>("preset");
   const [step, setStep] = useState<Step>("choose");
   const [selected, setSelected] = useState(0);
@@ -266,6 +290,7 @@ export default function DemoPage() {
   const [verifyOk, setVerifyOk] = useState<boolean | null>(null);
   const [replayResponse, setReplayResponse] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsAuth, setNeedsAuth] = useState(false);
   const [, navigate] = useLocation();
 
   const scenario = SCENARIOS[selected];
@@ -301,6 +326,7 @@ export default function DemoPage() {
     if (mode === "live" && !liveResponse) return;
     setStep("submitting");
     setError(null);
+    setNeedsAuth(false);
     try {
       const res = await fetch("/api/interactions", {
         method: "POST",
@@ -313,6 +339,11 @@ export default function DemoPage() {
           tags: activeTags(),
         }),
       });
+      if (res.status === 401) {
+        setNeedsAuth(true);
+        setStep("choose");
+        return;
+      }
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setReceipt(data);
@@ -414,8 +445,11 @@ export default function DemoPage() {
         ))}
       </div>
 
+      {/* Auth required */}
+      {needsAuth && <GuestPrompt onLogin={login} />}
+
       {/* Error */}
-      {error && (
+      {error && !needsAuth && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex gap-2 items-start" data-testid="demo-error">
           <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0 mt-0.5" />
           <div className="text-xs font-mono text-red-400">{error}</div>
