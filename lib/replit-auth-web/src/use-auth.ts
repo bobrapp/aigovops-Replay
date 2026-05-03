@@ -47,7 +47,19 @@ export function useAuth(): AuthState {
   }, []);
 
   const logout = useCallback(() => {
-    window.location.href = "/api/logout";
+    // POST to prevent CSRF-forced logout via cross-site top-level GET navigation.
+    // SameSite=Lax does not send cookies on cross-site POSTs, and the server's
+    // same-origin guard enforces the Origin allowlist as a second layer.
+    // The server returns { redirectUrl } pointing to the OIDC end-session URL;
+    // we navigate there programmatically to complete the logout flow.
+    fetch("/api/logout", { method: "POST", credentials: "include" })
+      .then((res) => res.json() as Promise<{ redirectUrl?: string }>)
+      .then((data) => {
+        window.location.href = data.redirectUrl ?? "/";
+      })
+      .catch(() => {
+        window.location.href = "/";
+      });
   }, []);
 
   return {

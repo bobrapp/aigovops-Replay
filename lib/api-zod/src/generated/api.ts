@@ -61,6 +61,13 @@ export const LogoutBrowserSessionHeader = zod.object({
     .describe("Opaque session token — `Bearer <sid>`."),
 });
 
+export const LogoutBrowserSessionResponse = zod.object({
+  redirectUrl: zod
+    .string()
+    .url()
+    .describe("The OIDC provider logout URL to navigate the browser to."),
+});
+
 /**
  * @summary Exchange a mobile OIDC code for a session token
  */

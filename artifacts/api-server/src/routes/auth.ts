@@ -231,7 +231,12 @@ router.get("/callback", async (req: Request, res: Response) => {
   res.redirect(returnTo);
 });
 
-router.get("/logout", async (req: Request, res: Response) => {
+// POST (not GET) so that SameSite=Lax prevents cookies being sent on
+// cross-site navigations, closing the CSRF logout vector described in
+// GHSA-style reports where an attacker-controlled page suppresses the
+// Referer header and forces a top-level GET navigation to /api/logout.
+// The client receives a JSON { redirectUrl } and navigates programmatically.
+router.post("/logout", async (req: Request, res: Response) => {
   const config = await getOidcConfig();
   // Post-logout redirect pinned to the canonical origin — not request headers.
   const origin = getCanonicalOrigin();
@@ -244,7 +249,7 @@ router.get("/logout", async (req: Request, res: Response) => {
     post_logout_redirect_uri: origin,
   });
 
-  res.redirect(endSessionUrl.href);
+  res.json({ redirectUrl: endSessionUrl.href });
 });
 
 router.post(

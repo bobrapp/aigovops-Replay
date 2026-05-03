@@ -38,6 +38,11 @@ export interface MobileTokenExchangeSuccess {
   token: string;
 }
 
+export interface BrowserLogoutSuccess {
+  /** The OIDC provider logout URL to navigate the browser to. */
+  redirectUrl: string;
+}
+
 export interface LogoutSuccess {
   success: boolean;
 }

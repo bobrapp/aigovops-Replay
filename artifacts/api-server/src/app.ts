@@ -5,6 +5,7 @@ import pinoHttp from "pino-http";
 import { rateLimit } from "express-rate-limit";
 import router from "./routes";
 import { authMiddleware } from "./middlewares/authMiddleware";
+import { SESSION_COOKIE } from "./lib/auth";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -77,20 +78,27 @@ function isAllowedOrigin(origin: string): boolean {
  * CSRF / same-origin guard for state-changing requests.
  *
  * Validates Origin (or Referer as fallback) against the allowlist for
- * POST/PUT/PATCH/DELETE and GET /api/logout. CORS alone is insufficient
- * because SameSite=Lax cookies are still sent on same-site cross-origin
- * navigations, and simple form POSTs do not trigger a CORS preflight.
+ * POST/PUT/PATCH/DELETE requests. CORS alone is insufficient because
+ * simple form POSTs do not trigger a CORS preflight.
  *
- * Requests with no Origin/Referer (CLI, server-to-server, mobile native
- * fetch) are allowed through — browsers always include Origin for
- * cross-site requests that carry cookies.
+ * Defense-in-depth for absent headers: if a state-changing request
+ * arrives with a session cookie but neither Origin nor Referer, it is
+ * rejected. Legitimate browsers always send at least one of these for
+ * cross-site credentialed requests. Non-browser clients (CLI, server-
+ * to-server, mobile native) authenticate via Bearer token and do not
+ * send session cookies, so they are unaffected by this check.
+ *
+ * Note: /api/logout was previously a GET route, making it vulnerable to
+ * cross-site forced-logout via top-level navigation (SameSite=Lax allows
+ * cookies on same-site cross-origin GET navigations). It is now a POST
+ * route so SameSite=Lax naturally blocks cookie delivery on cross-site
+ * POSTs, and this guard provides an additional layer of enforcement.
  */
 function sameOriginGuard(req: Request, res: Response, next: NextFunction): void {
   const method = req.method.toUpperCase();
   const isStateChanging = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-  const isLogoutGet = method === "GET" && req.path.startsWith("/api/logout");
 
-  if (!isStateChanging && !isLogoutGet) {
+  if (!isStateChanging) {
     next();
     return;
   }
@@ -126,6 +134,19 @@ function sameOriginGuard(req: Request, res: Response, next: NextFunction): void 
       res.status(403).json({ error: "Forbidden: request referer not permitted" });
       return;
     }
+    next();
+    return;
+  }
+
+  // Both Origin and Referer are absent. If the request carries a session
+  // cookie it is almost certainly a browser-initiated cross-site request
+  // with a suppressed Referer (e.g. Referrer-Policy: no-referrer). A
+  // legitimate browser would include at least one of these headers.
+  // Non-browser clients authenticate with Bearer tokens, not cookies.
+  const hasCookie = !!req.cookies?.[SESSION_COOKIE];
+  if (hasCookie) {
+    res.status(403).json({ error: "Forbidden: cannot verify request origin" });
+    return;
   }
 
   next();
