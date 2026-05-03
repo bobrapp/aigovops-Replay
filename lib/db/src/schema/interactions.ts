@@ -24,12 +24,16 @@ export const interactionsTable = pgTable("interactions", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => [
   // Composite unique index: chainHash must be unique within a user's chain.
-  // The global uniqueIndex on chainHash alone was replaced because buildChainHash
-  // now includes userId, making cross-user collisions structurally impossible.
-  // Using (userId, chainHash) as the constraint is semantically correct: two
-  // independent users may not produce the same hash (since userId is in the
-  // hash input), but this index makes the per-user chain intent explicit and
-  // provides a DB-level safety net should the hash function ever be changed.
+  // Replaced the previous global uniqueIndex("interactions_chain_hash_unique")
+  // which scoped uniqueness across ALL users. buildChainHash() is content-
+  // addressed (promptHash + responseHash + prevHash only); two different users
+  // minting a first receipt with identical content produce the same chainHash.
+  // The global index caused the second user's insert to fail, letting an
+  // attacker pre-mint common first-receipt pairs to block others.
+  // The composite (userId, chainHash) index fixes this: uniqueness is enforced
+  // per user, so independent users with identical content can both succeed.
+  // All chainHash-based lookups in route handlers are scoped to userId to
+  // maintain per-user chain isolation even when hashes are numerically equal.
   uniqueIndex("interactions_user_chain_hash_unique").on(table.userId, table.chainHash),
   // Partial unique index on non-null prevHash: ensures at most one receipt
   // can claim any given predecessor, providing DB-level fork prevention as

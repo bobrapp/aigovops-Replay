@@ -352,13 +352,22 @@ router.get("/interactions/:id/verify", requireAuth, async (req, res) => {
   const expectedChainHash = buildChainHash(interaction.promptHash, interaction.responseHash, interaction.prevHash ?? null);
   const chainHashSelfConsistent = expectedChainHash === interaction.chainHash;
 
-  // 3. Verify the predecessor exists in the chain (detects orphaned receipts)
+  // 3. Verify the predecessor exists in the chain (detects orphaned receipts).
+  //    Scoped to the receipt owner's userId: without this filter, a cross-user
+  //    chainHash collision (two users with the same genesis content produce the
+  //    same chainHash) could cause a different user's receipt to satisfy the
+  //    predecessor check, masking a genuinely orphaned link.
   let predecessorExists = true;
   if (interaction.prevHash !== null) {
     const [pred] = await db
       .select({ id: interactionsTable.id })
       .from(interactionsTable)
-      .where(eq(interactionsTable.chainHash, interaction.prevHash))
+      .where(
+        and(
+          eq(interactionsTable.chainHash, interaction.prevHash),
+          eq(interactionsTable.userId, interaction.userId),
+        ),
+      )
       .limit(1);
     predecessorExists = pred !== undefined;
   }
@@ -366,6 +375,10 @@ router.get("/interactions/:id/verify", requireAuth, async (req, res) => {
   // 4. Walk the full ancestry using a recursive CTE to detect any fork in the lineage.
   //    For each ancestor, we check whether more than one receipt claims that ancestor
   //    as its predecessor — if so, this receipt is a descendant of a fork.
+  //    Both the recursive join and the fork-detection subquery are scoped to
+  //    interaction.userId so the ancestry walk stays within the owner's chain and
+  //    cross-user receipts with colliding hashes don't pollute the lineage or
+  //    trigger false-positive fork detections.
   const lineageForkResult = await db.execute<{ fork_in_lineage: string }>(sql`
     WITH RECURSIVE ancestry AS (
       SELECT id, chain_hash, prev_hash
@@ -376,11 +389,14 @@ router.get("/interactions/:id/verify", requireAuth, async (req, res) => {
       FROM interactions i
       JOIN ancestry a ON i.chain_hash = a.prev_hash
       WHERE a.prev_hash IS NOT NULL
+        AND i.user_id = ${interaction.userId}
     )
     SELECT COUNT(*) AS fork_in_lineage
     FROM ancestry a
     WHERE (
-      SELECT COUNT(*) FROM interactions WHERE prev_hash = a.chain_hash
+      SELECT COUNT(*) FROM interactions
+      WHERE prev_hash = a.chain_hash
+        AND user_id = ${interaction.userId}
     ) > 1
   `);
   const lineageForked = Number((lineageForkResult.rows[0] as { fork_in_lineage: string } | undefined)?.fork_in_lineage ?? 0) > 0;
