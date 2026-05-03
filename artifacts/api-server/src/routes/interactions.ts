@@ -44,6 +44,16 @@
  *    session, never from the request body/query string).  This prevents a
  *    resource-exhaustion path where a user triggers aggregations over another
  *    user's (potentially larger) dataset.
+ *
+ * 7. PER-USER CHAINS
+ *    Chain appends (POST /interactions and POST /interactions/:id/replay) scope
+ *    the "latest chainHash" lookup to the current user so each user maintains
+ *    their own independent append-only chain.  Without this filter, receipts
+ *    from different users interleave into a global chain, causing per-user
+ *    /chain integrity checks to falsely report broken links.  The genesis
+ *    uniqueness check in GET /interactions/:id/verify is likewise scoped to
+ *    the receipt owner so that each user's first receipt is legitimately a
+ *    genesis node without triggering a false "multiple genesis" error.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import { Router, type IRouter } from "express";
@@ -228,9 +238,14 @@ router.post("/interactions", requireAuth, async (req, res) => {
   const interaction = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${CHAIN_WRITE_LOCK_KEY})`);
 
+    // Scope the latest chainHash to the current user so each user maintains
+    // their own independent chain. Without this filter, receipts from different
+    // users would interleave into a single global chain, causing per-user
+    // integrity checks to report broken links for legitimate receipts.
     const [latest] = await tx
       .select({ chainHash: interactionsTable.chainHash })
       .from(interactionsTable)
+      .where(eq(interactionsTable.userId, uid))
       .orderBy(desc(interactionsTable.createdAt))
       .limit(1);
 
@@ -365,10 +380,13 @@ router.get("/interactions/:id/verify", requireAuth, async (req, res) => {
   `);
   const lineageForked = Number((lineageForkResult.rows[0] as { fork_in_lineage: string } | undefined)?.fork_in_lineage ?? 0) > 0;
 
-  // 5. Global genesis uniqueness: a valid chain has exactly one genesis entry (prev_hash IS NULL).
-  //    Multiple genesis nodes corrupt the chain root regardless of which receipt is being verified.
+  // 5. Per-user genesis uniqueness: a valid per-user chain has exactly one genesis entry
+  //    (prev_hash IS NULL) owned by the receipt's user. Multiple genesis nodes in the same
+  //    user's chain corrupt their chain root. Scoping to interaction.userId avoids false
+  //    positives when other users each legitimately have their own genesis receipt.
   const genesisResult = await db.execute<{ genesis_count: string }>(sql`
-    SELECT COUNT(*) AS genesis_count FROM interactions WHERE prev_hash IS NULL
+    SELECT COUNT(*) AS genesis_count FROM interactions
+    WHERE prev_hash IS NULL AND user_id = ${interaction.userId}
   `);
   const genesisCount = Number((genesisResult.rows[0] as { genesis_count: string } | undefined)?.genesis_count ?? 0);
   const multipleGenesisNodes = genesisCount > 1;
@@ -450,9 +468,12 @@ router.post("/interactions/:id/replay", requireAuth, async (req, res) => {
   await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${CHAIN_WRITE_LOCK_KEY})`);
 
+    // Scope to the receipt owner's chain (same user as the original interaction)
+    // to maintain per-user chain integrity.
     const [latest] = await tx
       .select({ chainHash: interactionsTable.chainHash })
       .from(interactionsTable)
+      .where(eq(interactionsTable.userId, interaction.userId))
       .orderBy(desc(interactionsTable.createdAt))
       .limit(1);
 
