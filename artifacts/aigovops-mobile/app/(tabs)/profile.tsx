@@ -109,12 +109,12 @@ export default function ProfileScreen() {
       </View>
 
       <View style={[styles.menuSection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <MenuRow icon="information-circle-outline" label="About AIGovOps" onPress={() => {}} />
+        <MenuRow icon="information-circle-outline" label="About AIGovOps REPLAY - BLACKBOX" onPress={() => {}} />
         <MenuRow icon="log-out-outline" label="Sign Out" onPress={handleLogout} destructive />
       </View>
 
       <Text style={[styles.version, { color: colors.mutedForeground }]}>
-        AIGovOps REPLAY v1.0 · Buildathon 2026
+        AIGovOps REPLAY - BLACKBOX v1.0 · Buildathon 2026
       </Text>
     </ScrollView>
   );

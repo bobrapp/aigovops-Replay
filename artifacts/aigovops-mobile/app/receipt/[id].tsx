@@ -65,7 +65,7 @@ export default function ReceiptDetailScreen() {
     if (!receipt) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const message =
-      `AIGovOps Receipt — ${receipt.model}\n` +
+      `AIGovOps REPLAY - BLACKBOX Receipt — ${receipt.model}\n` +
       `═══════════════════════════════\n` +
       `Created: ${new Date(receipt.createdAt).toLocaleString()}\n` +
       `Status: ${receipt.policyStatus.toUpperCase()}\n\n` +
@@ -73,7 +73,7 @@ export default function ReceiptDetailScreen() {
       `Chain Hash: ${receipt.chainHash ?? "N/A"}\n\n` +
       `Verified by AIGovOps Foundation · aigovopsfoundation.org`;
     try {
-      await Share.share({ message, title: "AIGovOps Receipt" });
+      await Share.share({ message, title: "AIGovOps REPLAY - BLACKBOX Receipt" });
     } catch {
       // user cancelled or share not available
     }

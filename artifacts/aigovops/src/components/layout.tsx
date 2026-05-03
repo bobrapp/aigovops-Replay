@@ -296,7 +296,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
           <div>
             <div className="font-bold text-white text-sm leading-tight tracking-tight">AIGovOps</div>
-            <div className="text-white/50 text-[10px] leading-tight tracking-wide uppercase">Foundation · REPLAY</div>
+            <div className="text-white/50 text-[10px] leading-tight tracking-wide uppercase">REPLAY - BLACKBOX</div>
           </div>
         </div>
       </div>
@@ -395,7 +395,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     <path d="M12 16l3 3 5-6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </div>
-                <span className="font-bold text-white text-sm">{isSimple ? "AI Safety Hub" : "AIGovOps"}</span>
+                <span className="font-bold text-white text-sm">AIGovOps REPLAY - BLACKBOX</span>
               </div>
               <button onClick={() => setDrawerOpen(false)} className="text-white/60 hover:text-white p-1">
                 <X className="w-4 h-4" />
@@ -416,7 +416,7 @@ export function Layout({ children }: { children: ReactNode }) {
               <Shield className="w-4 h-4 text-white" />
             </div>
             <div>
-              <div className="font-bold text-foreground text-sm leading-none">{isSimple ? "AI Safety Hub" : "AIGovOps REPLAY"}</div>
+              <div className="font-bold text-foreground text-sm leading-none">AIGovOps REPLAY - BLACKBOX</div>
               <div className="text-[9px] text-muted-foreground leading-none mt-0.5">AiGovOps Foundation</div>
             </div>
           </div>

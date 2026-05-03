@@ -62,7 +62,7 @@ export default function Dashboard() {
               <Shield className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white leading-tight tracking-tight">AIGovOps REPLAY</h1>
+              <h1 className="text-xl font-bold text-white leading-tight tracking-tight">AIGovOps REPLAY - BLACKBOX</h1>
               <p className="text-white/60 text-xs mt-0.5">From Intentions to Evidence · AiGovOps Foundation</p>
             </div>
             <div className="ml-auto">

@@ -81,7 +81,7 @@ function WelcomeScreen({ onGuest }: { onGuest: () => void }) {
             </div>
             <div>
               <div className="text-2xl font-bold text-white tracking-tight leading-tight">AIGovOps</div>
-              <div className="text-emerald-400 font-mono text-sm font-semibold tracking-widest">REPLAY</div>
+              <div className="text-emerald-400 font-mono text-sm font-semibold tracking-widest">REPLAY - BLACKBOX</div>
               <div className="text-white/50 text-xs mt-1 leading-snug">AI Governance Foundation</div>
             </div>
           </div>
@@ -92,7 +92,7 @@ function WelcomeScreen({ onGuest }: { onGuest: () => void }) {
             <span style={{ color: "#10B981" }}>cryptographically proven.</span>
           </h1>
           <p className="text-white/60 text-base leading-relaxed mb-8">
-            AIGovOps REPLAY creates tamper-proof receipts for every AI conversation —
+            AIGovOps REPLAY - BLACKBOX creates tamper-proof receipts for every AI conversation —
             so you can verify what was said, when, and by which model.
           </p>
 

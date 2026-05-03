@@ -203,7 +203,7 @@ export default function CertificatePage() {
             ? "PENDING"
             : "REVIEW_REQUIRED",
       })),
-      standard: "AIGovOps REPLAY v1.0",
+      standard: "AIGovOps REPLAY - BLACKBOX v1.0",
       issuedBy: "AIGovOps Foundation",
       website: "https://www.aigovopsfoundation.org",
     };
@@ -569,7 +569,7 @@ export default function CertificatePage() {
               aigovopsfoundation.org
             </a>
             <div className="ml-auto text-[10px] text-muted-foreground/50 font-mono">
-              Cryptographic chain seal · AIGovOps REPLAY v1.0
+              Cryptographic chain seal · AIGovOps REPLAY - BLACKBOX v1.0
             </div>
           </div>
         </div>
