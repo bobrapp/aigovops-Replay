@@ -1,29 +1,3 @@
-/**
- * AuthContext.tsx — authentication state and OIDC login flow for the mobile app.
- *
- * ─── SECURE TOKEN STORAGE ─────────────────────────────────────────────────────
- *
- * The opaque bearer session token (sid) returned by /api/mobile-auth/token-exchange
- * is stored in expo-secure-store (SecureStore), NOT in AsyncStorage.
- *
- * Why this matters:
- *   AsyncStorage is an unencrypted key-value store intended for non-sensitive app
- *   data.  It is readable by anyone with access to the device's app data — iOS
- *   backups, ADB extraction, rooted/jailbroken devices, or local malware that can
- *   read the app sandbox.  Because the same sid is accepted as a bearer token by
- *   every authenticated API endpoint via Authorization: Bearer <sid>, a stolen
- *   AsyncStorage value enables full account impersonation for up to 7 days
- *   (SESSION_TTL in api-server/src/lib/auth.ts).
- *
- * SecureStore uses platform-backed protected storage:
- *   iOS  — Keychain Services (hardware-isolated on devices with Secure Enclave)
- *   Android — Android Keystore System / EncryptedSharedPreferences
- *
- * The sid is therefore encrypted at rest, bound to the app, and inaccessible to
- * other apps or system-level backup tools (unless device is rooted/compromised at
- * the OS level, which is out of scope for app-layer security).
- * ─────────────────────────────────────────────────────────────────────────────
- */
 import * as SecureStore from "expo-secure-store";
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
