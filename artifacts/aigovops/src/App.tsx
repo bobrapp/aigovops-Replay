@@ -413,7 +413,7 @@ function WelcomeScreen({ onGuest }: { onGuest: () => void }) {
                 See full chain →
               </Link>
             </div>
-            <DemoGallery limit={4} />
+            <DemoGallery />
           </div>
 
           {/* Bring-your-own-AI-output mint form */}

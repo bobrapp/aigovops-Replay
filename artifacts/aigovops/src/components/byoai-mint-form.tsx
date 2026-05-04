@@ -144,6 +144,12 @@ export function ByoaiMintForm() {
             </span>
           </div>
           <div className="flex justify-between gap-2">
+            <span className="text-white/40">PREV HASH</span>
+            <span className="text-white/70 truncate" data-testid="byoai-result-prevhash">
+              {result.prevHash ? shortHash(result.prevHash) : "GENESIS"}
+            </span>
+          </div>
+          <div className="flex justify-between gap-2">
             <span className="text-white/40">PROMPT HASH</span>
             <span className="text-white/70 truncate">{shortHash(result.promptHash)}</span>
           </div>

@@ -146,10 +146,14 @@ test.describe("Browser navigation — landing + chain view", () => {
     await expect(page.getByTestId("label-demo-gallery"))
       .toBeVisible({ timeout: 10_000 });
 
-    // Wait for the first demo card to render (the seeder ships >= 6
-    // fixtures at boot, so the gallery should never be empty in practice).
+    // Wait for the first demo card to render, then assert the landing
+    // gallery shows AT LEAST 6 receipts (the task requires the no-friction
+    // landing page to surface a meaningful spread of pre-baked scenarios,
+    // not just one). The seeder ships 7 fixtures at boot.
     await expect(page.getByTestId("demo-card").first())
       .toBeVisible({ timeout: 15_000 });
+    const cardCount = await page.getByTestId("demo-card").count();
+    expect(cardCount, "landing gallery must show >= 6 demo receipts").toBeGreaterThanOrEqual(6);
 
     // BYOAI mint form must be visible too — gallery without form would be
     // a regression that defeats the "minimum-friction trust ladder" goal.
