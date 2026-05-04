@@ -7,103 +7,32 @@ import {
 } from "@expo-google-fonts/inter";
 import { setBaseUrl } from "@workspace/api-client-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import * as LocalAuthentication from "expo-local-authentication";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect, useRef, useState } from "react";
-import { AppState, AppStateStatus, Platform } from "react-native";
+import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { LockScreen } from "@/components/LockScreen";
-import { AuthProvider, useAuth } from "@/context/AuthContext";
-import { LoginScreen } from "@/components/LoginScreen";
+import { AuthProvider } from "@/context/AuthContext";
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
 const DOMAIN = process.env.EXPO_PUBLIC_DOMAIN ?? "";
-const LOCK_AFTER_SECONDS = 60;
-const SESSION_TIMEOUT_SECONDS = 900; // 15 minutes
 
 if (DOMAIN) {
   setBaseUrl(`https://${DOMAIN}`);
 }
 
 function RootLayoutNav() {
-  const { user, isLoading, logout } = useAuth();
-  const [isLocked, setIsLocked] = useState(false);
-  const [biometricAvailable, setBiometricAvailable] = useState(false);
-  const backgroundedAt = useRef<number | null>(null);
-  const sessionBackgroundedAt = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!user || Platform.OS === "web") return;
-    (async () => {
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-      setBiometricAvailable(hasHardware && isEnrolled);
-    })();
-  }, [user]);
-
-  // Biometric lock — activates when app is backgrounded for > 60 seconds
-  useEffect(() => {
-    if (!user || !biometricAvailable || Platform.OS === "web") return;
-
-    const handleStateChange = (nextState: AppStateStatus) => {
-      if (nextState === "background" || nextState === "inactive") {
-        backgroundedAt.current = Date.now();
-      } else if (nextState === "active" && backgroundedAt.current !== null) {
-        const elapsed = (Date.now() - backgroundedAt.current) / 1000;
-        if (elapsed > LOCK_AFTER_SECONDS) {
-          setIsLocked(true);
-        }
-        backgroundedAt.current = null;
-      }
-    };
-
-    const sub = AppState.addEventListener("change", handleStateChange);
-    return () => sub.remove();
-  }, [user, biometricAvailable]);
-
-  // Session auto-timeout — logs out when app is backgrounded for > 15 minutes
-  useEffect(() => {
-    if (!user || Platform.OS === "web") return;
-
-    const handleStateChange = (nextState: AppStateStatus) => {
-      if (nextState === "background" || nextState === "inactive") {
-        sessionBackgroundedAt.current = Date.now();
-      } else if (nextState === "active" && sessionBackgroundedAt.current !== null) {
-        const elapsed = (Date.now() - sessionBackgroundedAt.current) / 1000;
-        if (elapsed > SESSION_TIMEOUT_SECONDS) {
-          logout();
-        }
-        sessionBackgroundedAt.current = null;
-      }
-    };
-
-    const sub = AppState.addEventListener("change", handleStateChange);
-    return () => sub.remove();
-  }, [user, logout]);
-
-  async function handleUnlock(): Promise<boolean> {
-    const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: "Unlock AIGovOps REPLAY - BLACKBOX",
-      fallbackLabel: "Use Passcode",
-      cancelLabel: "Cancel",
-      disableDeviceFallback: false,
-    });
-    if (result.success) setIsLocked(false);
-    return result.success;
-  }
-
-  if (isLoading) return null;
-  if (!user) return <LoginScreen />;
-  if (isLocked && biometricAvailable) return <LockScreen onUnlock={handleUnlock} />;
-
+  // Login is no longer required to use the app. The AuthProvider is still
+  // mounted so the few screens that call useAuth() (e.g. optional chain export
+  // on the chain tab, or the explicit "Sign In" recovery on the new-receipt
+  // modal) keep working for users who do choose to sign in. Without a session,
+  // those auth-gated actions surface their existing inline error states.
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
