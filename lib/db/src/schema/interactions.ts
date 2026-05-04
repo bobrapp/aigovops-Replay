@@ -145,6 +145,15 @@ export const shareTokensTable = pgTable("share_tokens", {
    */
   redact: text("redact").notNull().default("false"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  /**
+   * revokedAt — owner-revocation timestamp.
+   * NULL means the token is still active (until expires_at).
+   * Set by DELETE /interactions/:id/share-tokens/:tokenId.
+   * The public verify endpoint treats any non-NULL revokedAt as 404.
+   * Revoked rows are physically purged ~24h later by the sweep worker so
+   * that an accidentally-revoked link can be diagnosed during the window.
+   */
+  revokedAt: timestamp("revoked_at"),
 });
 
 export type ShareToken = typeof shareTokensTable.$inferSelect;

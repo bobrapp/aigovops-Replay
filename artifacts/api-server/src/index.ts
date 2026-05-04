@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startWebhookWorker } from "./lib/webhook-worker";
+import { startShareTokenSweepWorker } from "./lib/share-token-sweep";
 import { listRoutes } from "./lib/list-routes";
 import { seedDemoChain } from "./lib/demo-seeder";
 
@@ -75,6 +76,11 @@ app.listen(port, (err) => {
   // Start in-process webhook delivery worker.
   // Polls webhook_deliveries every WEBHOOK_POLL_INTERVAL_MS (default 5 s).
   startWebhookWorker();
+
+  // Start periodic share-token sweep (tasks #42 + #44).
+  // Deletes long-expired and revoked tokens past the grace window
+  // (default 24h). Set SHARE_TOKEN_SWEEP_INTERVAL_MS=0 to disable.
+  startShareTokenSweepWorker();
 
   // Seed the public "demo chain" used by the no-login landing-page gallery.
   // Idempotent: deterministic content-addressed ids + ON CONFLICT DO NOTHING,

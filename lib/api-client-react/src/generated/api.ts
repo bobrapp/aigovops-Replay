@@ -47,6 +47,7 @@ import type {
   PolicyList,
   PublicVerificationResult,
   ReplayResult,
+  ShareTokenList,
   ShareTokenResult,
   Stats,
   UpdatePolicyBody,
@@ -1833,7 +1834,190 @@ export const useCreateShareToken = <
 };
 
 /**
- * Token-gated public endpoint. Validates the share token, then returns the receipt's verification result. Redaction is controlled by the issuer at share-link generation time (the `redact` field on CreateShareTokenBody) and is enforced server-side — the recipient cannot override it. Returns 401 when the token is missing, expired, or invalid. Returns 422 when the chain ancestry walk is truncated by the depth limit.
+ * Authenticated, owner-only. Returns the receipt's currently-active share tokens (not revoked, not yet expired) so the Share dialog can list them and offer per-token revocation. Never includes the raw token or its hash — only metadata that lets the owner identify and revoke each row.
+
+ * @summary List active share tokens for a receipt
+ */
+export const getListShareTokensUrl = (id: string) => {
+  return `/api/interactions/${id}/share-tokens`;
+};
+
+export const listShareTokens = async (
+  id: string,
+  options?: RequestInit,
+): Promise<ShareTokenList> => {
+  return customFetch<ShareTokenList>(getListShareTokensUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListShareTokensQueryKey = (id: string) => {
+  return [`/api/interactions/${id}/share-tokens`] as const;
+};
+
+export const getListShareTokensQueryOptions = <
+  TData = Awaited<ReturnType<typeof listShareTokens>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listShareTokens>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListShareTokensQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listShareTokens>>> = ({
+    signal,
+  }) => listShareTokens(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listShareTokens>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListShareTokensQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listShareTokens>>
+>;
+export type ListShareTokensQueryError = ErrorType<void>;
+
+/**
+ * @summary List active share tokens for a receipt
+ */
+
+export function useListShareTokens<
+  TData = Awaited<ReturnType<typeof listShareTokens>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listShareTokens>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListShareTokensQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Authenticated, owner-only. Sets revoked_at = now() on the matching share token row. The public verify endpoint returns 404 immediately for revoked tokens. The row is physically purged ~24h later by the sweep worker so an accidentally-revoked link can be diagnosed during the grace window.
+
+ * @summary Revoke a single share token immediately
+ */
+export const getRevokeShareTokenUrl = (id: string, tokenId: string) => {
+  return `/api/interactions/${id}/share-tokens/${tokenId}`;
+};
+
+export const revokeShareToken = async (
+  id: string,
+  tokenId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getRevokeShareTokenUrl(id, tokenId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getRevokeShareTokenMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revokeShareToken>>,
+    TError,
+    { id: string; tokenId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof revokeShareToken>>,
+  TError,
+  { id: string; tokenId: string },
+  TContext
+> => {
+  const mutationKey = ["revokeShareToken"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof revokeShareToken>>,
+    { id: string; tokenId: string }
+  > = (props) => {
+    const { id, tokenId } = props ?? {};
+
+    return revokeShareToken(id, tokenId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RevokeShareTokenMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revokeShareToken>>
+>;
+
+export type RevokeShareTokenMutationError = ErrorType<void>;
+
+/**
+ * @summary Revoke a single share token immediately
+ */
+export const useRevokeShareToken = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revokeShareToken>>,
+    TError,
+    { id: string; tokenId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof revokeShareToken>>,
+  TError,
+  { id: string; tokenId: string },
+  TContext
+> => {
+  return useMutation(getRevokeShareTokenMutationOptions(options));
+};
+
+/**
+ * Token-gated public endpoint. Validates the share token, then returns the receipt's verification result. Redaction is controlled by the issuer at share-link generation time (the `redact` field on CreateShareTokenBody) and is enforced server-side — the recipient cannot override it.
+Status codes:
+  • 401 when the token query parameter is missing.
+  • 404 when the token never existed, was revoked, or already swept.
+  • 410 Gone when the token is past its expires_at — recipient
+    can be shown a clear "this share link has expired" message
+    (task #42).
+  • 422 when the chain ancestry walk is truncated by the depth limit.
 
  * @summary Public receipt verification via share token (no login required)
  */

@@ -306,6 +306,24 @@ export interface ShareTokenResult {
   verifyUrl: string;
   /** ISO-8601 timestamp when this token expires (default 7 days from now). */
   expiresAt: string;
+  /** Whether the issuer enabled redaction at share-link generation time. */
+  redact?: boolean;
+}
+
+/**
+ * Per-token metadata returned by GET /interactions/{id}/share-tokens. Never includes the raw token or its hash — only fields needed by the Share dialog to identify and revoke the row.
+
+ */
+export interface ShareTokenSummary {
+  /** Token id (used for the DELETE …/share-tokens/{tokenId} call). */
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+  redact: boolean;
+}
+
+export interface ShareTokenList {
+  tokens: ShareTokenSummary[];
 }
 
 export type PublicVerificationResultPolicyStatus =

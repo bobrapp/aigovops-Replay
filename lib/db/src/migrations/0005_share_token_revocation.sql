@@ -1,0 +1,12 @@
+-- Task #44 — owner-revocable share links.
+-- Adds a nullable revoked_at timestamp to share_tokens. Active tokens have
+-- revoked_at IS NULL; once an owner calls DELETE /interactions/:id/share-tokens/:tokenId
+-- the column is set to now() and the public /verify endpoint immediately
+-- returns 404 for any matching token lookup.
+--
+-- Task #42 — auto-expiry sweep.
+-- Expired and revoked rows are physically purged ~24h after their grace
+-- window by the in-process sweep worker (artifacts/api-server/src/lib/
+-- share-token-sweep.ts). No additional schema changes are required here —
+-- the sweep is a periodic DELETE.
+ALTER TABLE "share_tokens" ADD COLUMN IF NOT EXISTS "revoked_at" timestamp;

@@ -483,6 +483,67 @@ paths:
         "404":
           description: Not found
 
+  /interactions/{id}/share-tokens:
+    get:
+      operationId: listShareTokens
+      tags: [verification]
+      summary: List active share tokens for a receipt
+      description: >
+        Authenticated, owner-only. Returns the receipt's currently-active
+        share tokens (not revoked, not yet expired) so the Share dialog
+        can list them and offer per-token revocation. Never includes the
+        raw token or its hash — only metadata that lets the owner identify
+        and revoke each row.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Active share tokens
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareTokenList"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden — receipt belongs to another user
+        "404":
+          description: Not found
+
+  /interactions/{id}/share-tokens/{tokenId}:
+    delete:
+      operationId: revokeShareToken
+      tags: [verification]
+      summary: Revoke a single share token immediately
+      description: >
+        Authenticated, owner-only. Sets revoked_at = now() on the matching
+        share token row. The public verify endpoint returns 404 immediately
+        for revoked tokens. The row is physically purged ~24h later by the
+        sweep worker so an accidentally-revoked link can be diagnosed during
+        the grace window.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Token revoked
+        "401":
+          description: Unauthorized
+        "404":
+          description: Token not found, already revoked, or not owned by you
+
   /verify/{id}:
     get:
       operationId: getPublicVerification
@@ -493,8 +554,14 @@ paths:
         receipt's verification result. Redaction is controlled by the issuer at
         share-link generation time (the `redact` field on CreateShareTokenBody)
         and is enforced server-side — the recipient cannot override it.
-        Returns 401 when the token is missing, expired, or invalid.
-        Returns 422 when the chain ancestry walk is truncated by the depth limit.
+
+        Status codes:
+          • 401 when the token query parameter is missing.
+          • 404 when the token never existed, was revoked, or already swept.
+          • 410 Gone when the token is past its expires_at — recipient
+            can be shown a clear "this share link has expired" message
+            (task #42).
+          • 422 when the chain ancestry walk is truncated by the depth limit.
       security: []
       parameters:
         - name: id
@@ -515,9 +582,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/PublicVerificationResult"
         "401":
-          description: Token missing, expired, or invalid
+          description: Token query parameter missing
         "404":
-          description: Receipt not found
+          description: Token not found, revoked, or receipt not found
+        "410":
+          description: Share link has expired (task #42)
         "422":
           description: Chain depth limit exceeded — ancestry walk was truncated
 
@@ -1496,10 +1565,47 @@ components:
           type: string
           format: date-time
           description: ISO-8601 timestamp when this token expires (default 7 days from now).
+        redact:
+          type: boolean
+          description: Whether the issuer enabled redaction at share-link generation time.
       required:
         - token
         - verifyUrl
         - expiresAt
+
+    ShareTokenSummary:
+      type: object
+      description: >
+        Per-token metadata returned by GET /interactions/{id}/share-tokens.
+        Never includes the raw token or its hash — only fields needed by the
+        Share dialog to identify and revoke the row.
+      properties:
+        id:
+          type: string
+          description: Token id (used for the DELETE …/share-tokens/{tokenId} call).
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        redact:
+          type: boolean
+      required:
+        - id
+        - createdAt
+        - expiresAt
+        - redact
+
+    ShareTokenList:
+      type: object
+      properties:
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShareTokenSummary"
+      required:
+        - tokens
 
     PublicVerificationResult:
       type: object

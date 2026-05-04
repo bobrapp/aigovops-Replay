@@ -535,7 +535,52 @@ export const CreateShareTokenBody = zod
   );
 
 /**
- * Token-gated public endpoint. Validates the share token, then returns the receipt's verification result. Redaction is controlled by the issuer at share-link generation time (the `redact` field on CreateShareTokenBody) and is enforced server-side — the recipient cannot override it. Returns 401 when the token is missing, expired, or invalid. Returns 422 when the chain ancestry walk is truncated by the depth limit.
+ * Authenticated, owner-only. Returns the receipt's currently-active share tokens (not revoked, not yet expired) so the Share dialog can list them and offer per-token revocation. Never includes the raw token or its hash — only metadata that lets the owner identify and revoke each row.
+
+ * @summary List active share tokens for a receipt
+ */
+export const ListShareTokensParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ListShareTokensResponse = zod.object({
+  tokens: zod.array(
+    zod
+      .object({
+        id: zod
+          .string()
+          .describe(
+            "Token id (used for the DELETE …\/share-tokens\/{tokenId} call).",
+          ),
+        createdAt: zod.coerce.date(),
+        expiresAt: zod.coerce.date(),
+        redact: zod.boolean(),
+      })
+      .describe(
+        "Per-token metadata returned by GET \/interactions\/{id}\/share-tokens. Never includes the raw token or its hash — only fields needed by the Share dialog to identify and revoke the row.\n",
+      ),
+  ),
+});
+
+/**
+ * Authenticated, owner-only. Sets revoked_at = now() on the matching share token row. The public verify endpoint returns 404 immediately for revoked tokens. The row is physically purged ~24h later by the sweep worker so an accidentally-revoked link can be diagnosed during the grace window.
+
+ * @summary Revoke a single share token immediately
+ */
+export const RevokeShareTokenParams = zod.object({
+  id: zod.coerce.string(),
+  tokenId: zod.coerce.string(),
+});
+
+/**
+ * Token-gated public endpoint. Validates the share token, then returns the receipt's verification result. Redaction is controlled by the issuer at share-link generation time (the `redact` field on CreateShareTokenBody) and is enforced server-side — the recipient cannot override it.
+Status codes:
+  • 401 when the token query parameter is missing.
+  • 404 when the token never existed, was revoked, or already swept.
+  • 410 Gone when the token is past its expires_at — recipient
+    can be shown a clear "this share link has expired" message
+    (task #42).
+  • 422 when the chain ancestry walk is truncated by the depth limit.
 
  * @summary Public receipt verification via share token (no login required)
  */

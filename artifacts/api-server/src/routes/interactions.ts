@@ -59,7 +59,7 @@
 import { Router, type IRouter } from "express";
 import { rateLimit } from "express-rate-limit";
 import { db, interactionsTable, activityLogTable, policiesTable, shareTokensTable } from "@workspace/db";
-import { eq, desc, asc, count, and, sql } from "drizzle-orm";
+import { eq, desc, asc, count, and, sql, isNull } from "drizzle-orm";
 import { randomBytes, createHash } from "crypto";
 import {
   ListInteractionsQueryParams,
@@ -619,6 +619,110 @@ router.post("/interactions/:id/share-token", requireAuth, async (req, res) => {
 });
 
 /**
+ * GET /interactions/:id/share-tokens
+ *
+ * Authenticated, owner-only. Returns the receipt's currently-active share
+ * tokens (not revoked, not yet expired) so the Share dialog can list them
+ * and offer a per-token revoke action.
+ *
+ * NEVER includes the raw token or the token_hash in the response — that
+ * preserves the property that a DB dump or compromised list response cannot
+ * grant access. Only metadata that lets the owner identify and revoke the
+ * row is exposed: id, createdAt, expiresAt, redact.
+ */
+router.get("/interactions/:id/share-tokens", requireAuth, async (req, res) => {
+  const { id } = GetInteractionParams.parse(req.params);
+  const uid = userId(req);
+
+  const [interaction] = await db
+    .select({ id: interactionsTable.id, userId: interactionsTable.userId })
+    .from(interactionsTable)
+    .where(eq(interactionsTable.id, id));
+  if (!interaction) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  if (interaction.userId !== uid) {
+    res.status(403).json({ error: "Forbidden: this receipt belongs to another user" });
+    return;
+  }
+
+  const now = new Date();
+  const rows = await db
+    .select({
+      id: shareTokensTable.id,
+      createdAt: shareTokensTable.createdAt,
+      expiresAt: shareTokensTable.expiresAt,
+      redact: shareTokensTable.redact,
+    })
+    .from(shareTokensTable)
+    .where(
+      and(
+        eq(shareTokensTable.interactionId, id),
+        eq(shareTokensTable.userId, uid),
+        isNull(shareTokensTable.revokedAt),
+        // Filter out already-expired rows in the same query so the Share
+        // dialog never lists a link that wouldn't work anyway.
+        sql`${shareTokensTable.expiresAt} > ${now}`,
+      ),
+    )
+    .orderBy(desc(shareTokensTable.createdAt));
+
+  res.json({
+    tokens: rows.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt.toISOString(),
+      expiresAt: r.expiresAt.toISOString(),
+      redact: r.redact === "true",
+    })),
+  });
+});
+
+/**
+ * DELETE /interactions/:id/share-tokens/:tokenId
+ *
+ * Authenticated, owner-only. Sets revoked_at = now() on a single share token.
+ * The public verify endpoint checks revoked_at on every lookup and returns
+ * 404 immediately, so revocation is effective the moment this returns 204.
+ *
+ * The row is left in place (not physically deleted) so the periodic sweep
+ * worker can purge it after the grace window — that gives operators a brief
+ * audit trail of "this token was here and was revoked at X" if a recipient
+ * complains about a sudden 404.
+ *
+ * Returns 204 on success, 404 if no matching token exists for this user.
+ */
+router.delete("/interactions/:id/share-tokens/:tokenId", requireAuth, async (req, res) => {
+  const { id, tokenId } = req.params;
+  const uid = userId(req);
+
+  // Scope the update to (interactionId, tokenId, userId) so a user cannot
+  // revoke another user's tokens by guessing tokenIds. Returning the matched
+  // row lets us distinguish "no row matched" from "already revoked".
+  const updated = await db
+    .update(shareTokensTable)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(shareTokensTable.id, tokenId ?? ""),
+        eq(shareTokensTable.interactionId, id ?? ""),
+        eq(shareTokensTable.userId, uid),
+        // Only revoke if not already revoked — keeps the original revokedAt
+        // timestamp stable across re-revoke attempts.
+        isNull(shareTokensTable.revokedAt),
+      ),
+    )
+    .returning({ id: shareTokensTable.id });
+
+  if (updated.length === 0) {
+    res.status(404).json({ error: "Share token not found, already revoked, or not owned by you." });
+    return;
+  }
+
+  res.status(204).end();
+});
+
+/**
  * GET /verify/:id?token=TOKEN
  *
  * Public endpoint — no auth required. Validates the share token, then runs the
@@ -657,8 +761,26 @@ router.get("/verify/:id", async (req, res) => {
     )
     .limit(1);
 
-  if (!tokenRow || tokenRow.expiresAt < now) {
-    res.status(401).json({ error: "Share token is invalid or has expired." });
+  if (!tokenRow) {
+    // Don't disambiguate "never existed" from "revoked and swept" — both 404.
+    res.status(404).json({ error: "Share token not found." });
+    return;
+  }
+  if (tokenRow.revokedAt !== null) {
+    // Task #44: revoked tokens return 404 immediately so the recipient sees
+    // the same "not found" surface as a token that never existed.
+    res.status(404).json({ error: "Share token not found." });
+    return;
+  }
+  if (tokenRow.expiresAt <= now) {
+    // Task #42: distinguish expired tokens from missing/revoked ones with a
+    // 410 Gone so recipients see a clear "this link has expired" message.
+    // The row may still be present (within the grace window) or already
+    // swept; either way, the timestamp tells us it's expired.
+    res.status(410).json({
+      error: "This share link has expired.",
+      expiredAt: tokenRow.expiresAt.toISOString(),
+    });
     return;
   }
 
