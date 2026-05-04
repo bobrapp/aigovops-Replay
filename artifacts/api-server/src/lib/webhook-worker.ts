@@ -60,7 +60,8 @@ function isPrivateIp(ip: string): boolean {
   if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
   if (/^169\.254\./.test(h)) return true;
   if (/^0\./.test(h)) return true;
-  if (/^fc[0-9a-f]{2}:/i.test(h) || /^fd[0-9a-f]{2}:/i.test(h)) return true;
+  if (/^fc[0-9a-f]{2}:/i.test(h) || /^fd[0-9a-f]{2}:/i.test(h)) return true; // ULA fc00::/7
+  if (/^fe[89ab][0-9a-f]:/i.test(h)) return true; // IPv6 link-local fe80::/10
   return false;
 }
 

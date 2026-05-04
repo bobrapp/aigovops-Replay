@@ -12,7 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Bell, Plus, Trash2, Play, ChevronDown, ChevronUp,
   CheckCircle, XCircle, Clock, ToggleLeft, ToggleRight,
-  Loader2, Shield, Mail
+  Loader2, Shield, Mail, Pencil
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -135,6 +135,174 @@ function TestResultChip({ result }: { result: TestResult }) {
 
 // ── Single webhook endpoint card ──────────────────────────────────────────────
 
+// ── Edit endpoint form ────────────────────────────────────────────────────────
+
+interface EditEndpointFormProps {
+  ep: {
+    id: string;
+    url: string;
+    hasSecret: boolean;
+    eventFilter: string;
+    policyIds?: string[] | null;
+  };
+  onClose: () => void;
+}
+
+function EditEndpointForm({ ep, onClose }: EditEndpointFormProps) {
+  const queryClient = useQueryClient();
+  const [url, setUrl] = useState(ep.url);
+  const [secret, setSecret] = useState("");
+  const [clearSecret, setClearSecret] = useState(false);
+  const [eventFilter, setEventFilter] = useState<"all" | "critical" | "high_and_critical">(
+    ep.eventFilter as "all" | "critical" | "high_and_critical",
+  );
+  const [policyIdsRaw, setPolicyIdsRaw] = useState((ep.policyIds ?? []).join(", "));
+  const [err, setErr] = useState<string | null>(null);
+
+  const update = useUpdateWebhook({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListWebhooksQueryKey() });
+        onClose();
+      },
+      onError: (e: unknown) => {
+        const msg = (e as { payload?: { error?: string } })?.payload?.error;
+        setErr(msg ?? "Failed to update webhook endpoint.");
+      },
+    },
+  });
+
+  function handleSubmit(ev: React.FormEvent) {
+    ev.preventDefault();
+    setErr(null);
+    if (!url.trim()) { setErr("URL is required."); return; }
+    const policyIds = policyIdsRaw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    update.mutate({
+      id: ep.id,
+      data: {
+        url: url.trim(),
+        secret: clearSecret ? "" : (secret.trim() || undefined),
+        eventFilter,
+        policyIds: policyIds.length > 0 ? policyIds : null,
+      },
+    });
+  }
+
+  return (
+    <Card data-testid="edit-webhook-form">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Edit Webhook Endpoint</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-foreground block mb-1">
+              Endpoint URL <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://your-server.example.com/hooks/policy-violations"
+              className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              required
+              data-testid="webhook-url-input"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-foreground block mb-1">
+              HMAC Secret{" "}
+              <span className="text-muted-foreground font-normal">
+                {ep.hasSecret ? "(leave blank to keep current)" : "(optional)"}
+              </span>
+            </label>
+            <input
+              type="text"
+              value={secret}
+              onChange={(e) => { setSecret(e.target.value); setClearSecret(false); }}
+              placeholder={ep.hasSecret ? "Enter new secret to replace" : "your-hmac-secret"}
+              className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring font-mono"
+              disabled={clearSecret}
+              data-testid="webhook-secret-input"
+            />
+            {ep.hasSecret && (
+              <label className="flex items-center gap-2 mt-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={clearSecret}
+                  onChange={(e) => { setClearSecret(e.target.checked); if (e.target.checked) setSecret(""); }}
+                  className="rounded"
+                />
+                <span className="text-xs text-muted-foreground">Remove secret (disable HMAC signing)</span>
+              </label>
+            )}
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-foreground block mb-1">Event filter</label>
+            <select
+              value={eventFilter}
+              onChange={(e) => setEventFilter(e.target.value as typeof eventFilter)}
+              className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              data-testid="webhook-filter-select"
+            >
+              <option value="all">All violations</option>
+              <option value="high_and_critical">High + Critical only</option>
+              <option value="critical">Critical only</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-foreground block mb-1">
+              Specific policy IDs <span className="text-muted-foreground font-normal">(optional — overrides filter above)</span>
+            </label>
+            <input
+              type="text"
+              value={policyIdsRaw}
+              onChange={(e) => setPolicyIdsRaw(e.target.value)}
+              placeholder="policyId1, policyId2, ..."
+              className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring font-mono"
+              data-testid="webhook-policy-ids-input"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Comma-separated. Clear to revert to severity-based event filter.
+            </p>
+          </div>
+
+          {err && (
+            <p className="text-sm text-red-500 flex items-center gap-1.5">
+              <XCircle className="w-3.5 h-3.5" />
+              {err}
+            </p>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <Button
+              type="submit"
+              size="sm"
+              className="gap-2"
+              disabled={update.isPending}
+              data-testid="webhook-save-btn"
+            >
+              {update.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Pencil className="w-3.5 h-3.5" />}
+              Save Changes
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Single webhook endpoint card ──────────────────────────────────────────────
+
 interface EndpointCardProps {
   ep: {
     id: string;
@@ -158,6 +326,11 @@ function EndpointCard({
   ep, onToggle, onDelete, onTest, testLoading, testResult, deleteLoading
 }: EndpointCardProps) {
   const [deliveriesOpen, setDeliveriesOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  if (isEditing) {
+    return <EditEndpointForm ep={ep} onClose={() => setIsEditing(false)} />;
+  }
 
   return (
     <Card className={`transition-opacity ${ep.enabled ? "" : "opacity-60"}`} data-testid="webhook-endpoint-card">
@@ -194,6 +367,16 @@ function EndpointCard({
             >
               {testLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
               Test
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setIsEditing(true)}
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              title="Edit endpoint"
+              data-testid="webhook-edit-btn"
+            >
+              <Pencil className="w-3.5 h-3.5" />
             </Button>
             <Button
               size="sm"
