@@ -126,8 +126,9 @@ async function upsertUser(claims: Record<string, unknown>) {
   } catch (err: unknown) {
     // Postgres enforces ALL unique constraints at INSERT time, before the
     // ON CONFLICT handler fires.  If a different user row already holds this
-    // email, we update that row's id (and other fields) to match the incoming
-    // OIDC identity so repeated logins with the same email always succeed.
+    // email address (e.g. a leftover row from a prior random sub), we update
+    // only the mutable profile fields on that row — never the primary key —
+    // so that existing related records are not orphaned.
     const isEmailConflict =
       typeof err === "object" &&
       err !== null &&
@@ -139,7 +140,14 @@ async function upsertUser(claims: Record<string, unknown>) {
       const { eq } = await import("drizzle-orm");
       const [user] = await db
         .update(usersTable)
-        .set({ ...userData, updatedAt: new Date() })
+        // IMPORTANT: do NOT include `id` here — mutating the primary key
+        // would orphan any related records that reference the old user id.
+        .set({
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          profileImageUrl: userData.profileImageUrl,
+          updatedAt: new Date(),
+        })
         .where(eq(usersTable.email, userData.email))
         .returning();
       return user;
