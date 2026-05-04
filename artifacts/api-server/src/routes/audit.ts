@@ -58,6 +58,17 @@ router.get("/audit/chain-status", requireAdminAuth, async (_req, res) => {
   let headHash: string | null = null;
   let chainStarted = false;
   let hashableCount = 0;
+  // Capped list of mismatched seq values for operator drilldown. Capped
+  // because a fully-corrupted chain could otherwise produce an unbounded
+  // response. The full count remains in `tampered`.
+  const MISMATCH_LIMIT = 1000;
+  const mismatchedSeqs: string[] = [];
+  const recordTamper = (seq: bigint | string) => {
+    tampered++;
+    if (mismatchedSeqs.length < MISMATCH_LIMIT) {
+      mismatchedSeqs.push(String(seq));
+    }
+  };
 
   for (const row of allRows) {
     if (!chainStarted) {
@@ -73,7 +84,7 @@ router.get("/audit/chain-status", requireAdminAuth, async (_req, res) => {
 
     // (a) NULL logHash after chain start → tampered entry.
     if (row.logHash === null) {
-      tampered++;
+      recordTamper(row.seq);
       // Cannot advance expectedPrev — the chain is broken from here.
       continue;
     }
@@ -92,7 +103,7 @@ router.get("/audit/chain-status", requireAdminAuth, async (_req, res) => {
     const hashOk = row.logHash === expectedHash;
 
     if (!prevLinkOk || !hashOk) {
-      tampered++;
+      recordTamper(row.seq);
     }
 
     expectedPrev = row.logHash;
@@ -106,6 +117,7 @@ router.get("/audit/chain-status", requireAdminAuth, async (_req, res) => {
     hashableEntries: hashableCount,
     intact,
     tampered,
+    mismatchedSeqs,
     headHash,
     verifiedAt: new Date().toISOString(),
   });

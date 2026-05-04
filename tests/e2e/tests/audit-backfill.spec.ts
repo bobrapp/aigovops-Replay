@@ -164,7 +164,17 @@ test.describe("audit-log backfill", () => {
       expect(intactStatus.total).toBe(beforeStatus.total);
 
       // ── Tamper one backfilled row → walker must flag it ───────────────────
+      // First, look up the tampered row's seq so we can assert mismatchedSeqs
+      // contains exactly that value (not just "tampered >= 1"). This is the
+      // strict "flags exactly that row's seq" contract from the task plan.
       const targetId = insertedIds[0];
+      const seqLookup = await pool.query<{ seq: string }>(
+        "SELECT seq::text AS seq FROM activity_log WHERE id = $1",
+        [targetId],
+      );
+      const targetSeq = seqLookup.rows[0]?.seq;
+      expect(targetSeq, "target row must have a seq").toBeTruthy();
+
       await pool.query(
         "UPDATE activity_log SET summary = $1 WHERE id = $2",
         ["tampered-by-e2e", targetId],
@@ -172,6 +182,14 @@ test.describe("audit-log backfill", () => {
       const tamperedStatus = await fetchChainStatus(request);
       expect(tamperedStatus.tampered).toBeGreaterThanOrEqual(1);
       expect(tamperedStatus.intact).toBe(false);
+      // Strict: the tampered row's seq must appear in mismatchedSeqs. Use
+      // toContain rather than toEqual([targetSeq]) because tampering one
+      // row's summary also breaks the chain link for every subsequent row,
+      // so other seqs may legitimately appear too.
+      expect(
+        tamperedStatus.mismatchedSeqs,
+        "mismatchedSeqs must contain the tampered row's seq",
+      ).toContain(targetSeq);
 
       // Restore the row's original summary so the next assertion runs against
       // a clean chain. Recompute the hash to keep the chain coherent.

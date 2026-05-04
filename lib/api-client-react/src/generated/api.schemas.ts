@@ -280,6 +280,9 @@ export interface AuditChainStatus {
   intact: boolean;
   /** Count of hashable entries that failed hash verification */
   tampered: number;
+  /** Exact `seq` values (as decimal strings — seq is BIGSERIAL and may exceed JS Number safe range) of every hashable entry that failed verification. Empty when `intact: true`. Returned as strings so consumers can correlate them with audit-log row identifiers without precision loss. Capped at 1000 entries to bound response size; if more rows are tampered, only the first 1000 by seq are listed and `tampered` still reports the full count.
+   */
+  mismatchedSeqs: string[];
   /** logHash of the most recent hashable entry; null if no hashed entries exist */
   headHash?: string | null;
   /** Timestamp of when this verification was performed */

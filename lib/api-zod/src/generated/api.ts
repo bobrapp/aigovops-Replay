@@ -491,6 +491,11 @@ export const GetAuditChainStatusResponse = zod
     tampered: zod
       .number()
       .describe("Count of hashable entries that failed hash verification"),
+    mismatchedSeqs: zod
+      .array(zod.string())
+      .describe(
+        "Exact `seq` values (as decimal strings — seq is BIGSERIAL and may exceed JS Number safe range) of every hashable entry that failed verification. Empty when `intact: true`. Returned as strings so consumers can correlate them with audit-log row identifiers without precision loss. Capped at 1000 entries to bound response size; if more rows are tampered, only the first 1000 by seq are listed and `tampered` still reports the full count.\n",
+      ),
     headHash: zod
       .string()
       .nullish()
