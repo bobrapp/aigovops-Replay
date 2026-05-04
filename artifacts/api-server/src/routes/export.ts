@@ -6,6 +6,10 @@
  *   - Require an authenticated session (requireAuth middleware)
  *   - Scope the query strictly to the requesting user's own receipts
  *   - Set Content-Disposition: attachment so browsers trigger a download
+ *   - Are rate-limited per-user (EXPORT_RATE_LIMIT / hour, default 30/hr)
+ *   - Cap a single response at EXPORT_ROW_CAP rows (default 5000); when the
+ *     cap is hit the response carries X-Truncated:true and X-Next-Cursor:<c>
+ *     headers and callers can paginate via ?cursor=<c>.
  *
  * GET /export/jsonl   — NDJSON stream, one receipt per line (memory-safe:
  *                       rows are fetched in 200-row batches and written to the
@@ -22,17 +26,108 @@
  * GET /export/sqlite  — SQLite .db file (binary format, inherently non-streamable).
  *                       Memory footprint is minimised by fetching rows in 200-row
  *                       batches and inserting them in per-batch transactions.
+ *
+ * Abuse protection (task #41):
+ *
+ *   • Per-user rate limit. We mirror mintRateLimiter from interactions.ts:
+ *     each authenticated user gets EXPORT_RATE_LIMIT requests per hour across
+ *     ALL three export endpoints (the limiter shares state by keying on uid).
+ *     Anonymous IPs are rejected by requireAuth before the limiter runs, so a
+ *     separate anonymous bucket isn't needed.
+ *
+ *   • Row-count cap. EXPORT_ROW_CAP (default 5000) bounds the bytes a single
+ *     request can stream — the dominant abuse vector once authentication is
+ *     not the bottleneck.  We pre-count the matching rows before writing any
+ *     headers so X-Truncated and X-Next-Cursor can be set up-front (HTTP
+ *     headers cannot be amended after the first body byte is flushed).
+ *
+ *   • Cursor pagination.  Cursor is a base64-encoded `createdAtIso|id` tuple
+ *     so callers can resume after the truncation point.  We order by
+ *     `(createdAt, id)` and use Postgres row-tuple comparison so the cursor
+ *     advances deterministically even for receipts created in the same
+ *     millisecond.
  */
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { db, interactionsTable } from "@workspace/db";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, and, sql, count } from "drizzle-orm";
+import { rateLimit } from "express-rate-limit";
 import Database from "better-sqlite3";
 import { requireAuth } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
 
 const BATCH = 200;
+
+const EXPORT_ROW_CAP = (() => {
+  const raw = process.env.EXPORT_ROW_CAP;
+  if (!raw) return 5_000;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 5_000;
+})();
+
+const EXPORT_RATE_LIMIT = (() => {
+  const raw = process.env.EXPORT_RATE_LIMIT;
+  if (!raw) return 30;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 30;
+})();
+
+/**
+ * Per-user rate limiter shared across all three export routes.
+ *
+ * windowMs = 1 hour; limit = EXPORT_RATE_LIMIT.  Keyed on the authenticated
+ * user id (NOT IP) because the routes run after requireAuth — keying on IP
+ * would punish multiple users sharing a corporate proxy.
+ *
+ * The limiter is created once at module load so all three routes share one
+ * counter store.  This is intentional: a user who burns 30 requests on
+ * /export/jsonl should not get a fresh 30 on /export/html.
+ */
+const exportRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: EXPORT_RATE_LIMIT,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  keyGenerator: (req) =>
+    (req as Express.Request & { user?: { id?: string } }).user?.id ?? req.ip ?? "anon",
+  message: {
+    error: `Export rate limit reached — at most ${EXPORT_RATE_LIMIT} export requests per hour. Try again shortly.`,
+  },
+});
+
+/**
+ * Cursors are encoded as `base64url(receiptId)`.  We deliberately do NOT
+ * embed the createdAt timestamp in the cursor:
+ *
+ *   • Postgres `timestamp` columns have microsecond precision; JS `Date`
+ *     truncates to milliseconds.  Round-tripping the timestamp through
+ *     `.toISOString()` would silently shift the cursor backwards by up to
+ *     999µs and the cursor row itself would re-appear at the head of the
+ *     next page (off-by-one).
+ *
+ *   • Looking up the cursor row's (createdAt, id) tuple inside a Postgres
+ *     subquery sidesteps the precision problem entirely — the database
+ *     compares its own native values.
+ */
+function encodeCursorId(id: string): string {
+  return Buffer.from(id).toString("base64url");
+}
+
+// Receipt ids are 16 random bytes hex-encoded (see lib/id.ts → generateId).
+// Validating the shape lets us return a clean 400 for bogus cursors instead
+// of silently returning an empty page when the inner subquery finds no row.
+const RECEIPT_ID_RE = /^[a-f0-9]{32}$/;
+
+function decodeCursorId(raw: string): string | null {
+  try {
+    const id = Buffer.from(raw, "base64url").toString("utf8");
+    if (!RECEIPT_ID_RE.test(id)) return null;
+    return id;
+  } catch {
+    return null;
+  }
+}
 
 function getUid(req: Express.Request): string {
   return (req as Express.Request & { user: NonNullable<Express.Request["user"]> }).user.id;
@@ -44,35 +139,126 @@ function exportFilename(userId: string, ext: string): string {
   return `aigovops-chain-${safeId}-${date}.${ext}`;
 }
 
-/** Async generator: yields rows in BATCH-sized pages ordered oldest-first. */
-async function* batchRows(uid: string) {
+/**
+ * Build the WHERE clause for a user's rows, optionally filtered to those
+ * strictly after the supplied cursor row.  Postgres row-tuple comparison gives
+ * us deterministic ordering even when two receipts share createdAt down to the
+ * microsecond — the secondary key (id) breaks any tie.  The cursor row's
+ * (created_at, id) tuple is looked up via subquery so we never round-trip
+ * the timestamp through JS (which would lose microsecond precision).
+ */
+function buildWhere(uid: string, cursorId: string | null) {
+  const userClause = eq(interactionsTable.userId, uid);
+  if (!cursorId) return userClause;
+  return and(
+    userClause,
+    sql`(${interactionsTable.createdAt}, ${interactionsTable.id}) > (
+      SELECT created_at, id FROM interactions WHERE id = ${cursorId}
+    )`,
+  );
+}
+
+/** Async generator: yields rows in BATCH-sized pages ordered (createdAt, id) ascending. */
+async function* batchRows(uid: string, cursorId: string | null, maxRows: number) {
   let offset = 0;
-  while (true) {
+  let remaining = maxRows;
+  while (remaining > 0) {
+    const take = Math.min(BATCH, remaining);
     const rows = await db
       .select()
       .from(interactionsTable)
-      .where(eq(interactionsTable.userId, uid))
-      .orderBy(asc(interactionsTable.createdAt))
-      .limit(BATCH)
+      .where(buildWhere(uid, cursorId))
+      .orderBy(asc(interactionsTable.createdAt), asc(interactionsTable.id))
+      .limit(take)
       .offset(offset);
     if (rows.length === 0) break;
     yield rows;
-    if (rows.length < BATCH) break;
-    offset += BATCH;
+    if (rows.length < take) break;
+    offset += rows.length;
+    remaining -= rows.length;
+  }
+}
+
+/**
+ * Resolve cursor + truncation state BEFORE writing any response bytes.
+ *
+ * Returns:
+ *   • cursor          — parsed ?cursor query param (or null if absent)
+ *   • totalAvailable  — count of rows matching (uid, cursor)
+ *   • truncated       — totalAvailable > EXPORT_ROW_CAP
+ *   • nextCursor      — encoded cursor pointing at the last row that WILL
+ *                       be emitted (so the next call resumes after it).
+ *                       Only populated when truncated=true.
+ *
+ * On invalid cursor we throw so the caller can return 400.
+ */
+async function resolveTruncation(uid: string, rawCursor: string | null) {
+  let cursorId: string | null = null;
+  if (rawCursor) {
+    cursorId = decodeCursorId(rawCursor);
+    if (!cursorId) throw new Error("Invalid cursor");
+  }
+
+  const [{ value }] = await db
+    .select({ value: count() })
+    .from(interactionsTable)
+    .where(buildWhere(uid, cursorId));
+  const totalAvailable = Number(value);
+  const truncated = totalAvailable > EXPORT_ROW_CAP;
+
+  let nextCursor: string | null = null;
+  if (truncated) {
+    // Look up the last row inside the cap so the next page resumes after it.
+    const lastRow = await db
+      .select({ id: interactionsTable.id })
+      .from(interactionsTable)
+      .where(buildWhere(uid, cursorId))
+      .orderBy(asc(interactionsTable.createdAt), asc(interactionsTable.id))
+      .limit(1)
+      .offset(EXPORT_ROW_CAP - 1);
+    if (lastRow[0]) {
+      nextCursor = encodeCursorId(lastRow[0].id);
+    }
+  }
+
+  return { cursorId, totalAvailable, truncated, nextCursor };
+}
+
+function setTruncationHeaders(
+  res: Response,
+  truncated: boolean,
+  nextCursor: string | null,
+  totalAvailable: number,
+): void {
+  res.setHeader("X-Truncated", truncated ? "true" : "false");
+  res.setHeader("X-Total-Available", String(totalAvailable));
+  res.setHeader("X-Row-Cap", String(EXPORT_ROW_CAP));
+  if (truncated && nextCursor) {
+    res.setHeader("X-Next-Cursor", nextCursor);
   }
 }
 
 // ─── GET /export/jsonl ────────────────────────────────────────────────────────
 
-router.get("/export/jsonl", requireAuth, async (req, res) => {
+router.get("/export/jsonl", requireAuth, exportRateLimiter, async (req, res) => {
   const uid = getUid(req as Express.Request);
   const filename = exportFilename(uid, "jsonl");
+  const rawCursor = typeof req.query["cursor"] === "string" ? req.query["cursor"] : null;
+
+  let trunc;
+  try {
+    trunc = await resolveTruncation(uid, rawCursor);
+  } catch {
+    res.status(400).json({ error: "Invalid cursor" });
+    return;
+  }
 
   res.setHeader("Content-Type", "application/x-ndjson");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Transfer-Encoding", "chunked");
+  setTruncationHeaders(res, trunc.truncated, trunc.nextCursor, trunc.totalAvailable);
 
-  for await (const rows of batchRows(uid)) {
+  for await (const rows of batchRows(uid, trunc.cursorId, EXPORT_ROW_CAP)) {
     for (const row of rows) {
       const line = JSON.stringify({
         id: row.id,
@@ -92,38 +278,54 @@ router.get("/export/jsonl", requireAuth, async (req, res) => {
     }
   }
 
+  // Trailing meta line so callers parsing line-by-line can detect truncation
+  // without inspecting headers (useful for tools that pipe the body through
+  // gunzip/curl without preserving response metadata).
+  if (trunc.truncated) {
+    res.write(
+      JSON.stringify({
+        _meta: {
+          truncated: true,
+          rowCap: EXPORT_ROW_CAP,
+          totalAvailable: trunc.totalAvailable,
+          nextCursor: trunc.nextCursor,
+        },
+      }) + "\n",
+    );
+  }
+
   res.end();
 });
 
 // ─── GET /export/html ─────────────────────────────────────────────────────────
 
-router.get("/export/html", requireAuth, async (req, res) => {
+router.get("/export/html", requireAuth, exportRateLimiter, async (req, res) => {
   const uid = getUid(req as Express.Request);
   const filename = exportFilename(uid, "html");
   const date = new Date().toISOString().slice(0, 10);
+  const rawCursor = typeof req.query["cursor"] === "string" ? req.query["cursor"] : null;
+
+  let trunc;
+  try {
+    trunc = await resolveTruncation(uid, rawCursor);
+  } catch {
+    res.status(400).json({ error: "Invalid cursor" });
+    return;
+  }
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Transfer-Encoding", "chunked");
+  setTruncationHeaders(res, trunc.truncated, trunc.nextCursor, trunc.totalAvailable);
 
   // ── 1. Write HTML head + skeleton before any DB query ──────────────────────
   res.write(HTML_HEAD(date));
 
   // ── 2. Stream full receipt dataset as a JSON array in a script tag ─────────
-  //
-  // We write the opening bracket, then each row as a comma-prefixed JSON
-  // object (using leading commas so we never need to know whether a row is
-  // last), then close the array.  Each 200-row batch is serialised and written
-  // to the response immediately — the server never holds all rows in memory.
-  //
-  // COMPLETE receipt payloads are included: full prompt, full response, all
-  // cryptographic hash fields, policy status, tags, and timestamps.  No
-  // truncation.  The embedded verification JS reads exclusively from this
-  // blob, ensuring a single source of truth for both rendering and chain walk.
   res.write('<script id="receipts-data" type="application/json">[\n');
 
   let totalWritten = 0;
-  for await (const rows of batchRows(uid)) {
+  for await (const rows of batchRows(uid, trunc.cursorId, EXPORT_ROW_CAP)) {
     for (const row of rows) {
       const prefix = totalWritten === 0 ? "" : ",\n";
       const obj = JSON.stringify({
@@ -148,6 +350,19 @@ router.get("/export/html", requireAuth, async (req, res) => {
 
   res.write("\n]</script>\n");
 
+  // Embed truncation metadata in a parallel script tag so the embedded
+  // verifier UI can render a banner pointing at the next-cursor URL.
+  res.write(
+    '<script id="export-meta" type="application/json">' +
+      JSON.stringify({
+        truncated: trunc.truncated,
+        rowCap: EXPORT_ROW_CAP,
+        totalAvailable: trunc.totalAvailable,
+        nextCursor: trunc.nextCursor,
+      }).replace(/<\/script>/gi, "<\\/script>") +
+      "</script>\n",
+  );
+
   // ── 3. Write the verification + rendering JS and closing HTML ──────────────
   res.write(HTML_FOOT(totalWritten, date));
   res.end();
@@ -155,9 +370,18 @@ router.get("/export/html", requireAuth, async (req, res) => {
 
 // ─── GET /export/sqlite ───────────────────────────────────────────────────────
 
-router.get("/export/sqlite", requireAuth, async (req, res) => {
+router.get("/export/sqlite", requireAuth, exportRateLimiter, async (req, res) => {
   const uid = getUid(req as Express.Request);
   const filename = exportFilename(uid, "db");
+  const rawCursor = typeof req.query["cursor"] === "string" ? req.query["cursor"] : null;
+
+  let trunc;
+  try {
+    trunc = await resolveTruncation(uid, rawCursor);
+  } catch {
+    res.status(400).json({ error: "Invalid cursor" });
+    return;
+  }
 
   const sqlDb = new Database(":memory:");
 
@@ -178,6 +402,10 @@ router.get("/export/sqlite", requireAuth, async (req, res) => {
       replay_count    INTEGER NOT NULL DEFAULT 0,
       created_at      TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS export_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS idx_interactions_user_id    ON interactions (user_id);
     CREATE INDEX IF NOT EXISTS idx_interactions_created_at ON interactions (created_at);
   `);
@@ -185,12 +413,11 @@ router.get("/export/sqlite", requireAuth, async (req, res) => {
   const stmt = sqlDb.prepare(
     `INSERT INTO interactions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   );
+  const metaStmt = sqlDb.prepare(`INSERT INTO export_meta VALUES (?, ?)`);
 
   // Fetch rows in 200-row batches; insert each batch in a single transaction
   // to keep peak memory proportional to batch size rather than total row count.
-  // (The final serialize() call is inherent to the SQLite binary format and
-  //  cannot be streamed further without a different storage approach.)
-  for await (const rows of batchRows(uid)) {
+  for await (const rows of batchRows(uid, trunc.cursorId, EXPORT_ROW_CAP)) {
     const insertBatch = sqlDb.transaction(() => {
       for (const row of rows) {
         stmt.run(
@@ -213,6 +440,13 @@ router.get("/export/sqlite", requireAuth, async (req, res) => {
     });
     insertBatch();
   }
+
+  // Persist truncation metadata inside the .db so SQLite-only consumers
+  // (DB Browser, sqlite3 CLI) can see it without inspecting HTTP headers.
+  metaStmt.run("truncated", trunc.truncated ? "true" : "false");
+  metaStmt.run("rowCap", String(EXPORT_ROW_CAP));
+  metaStmt.run("totalAvailable", String(trunc.totalAvailable));
+  if (trunc.nextCursor) metaStmt.run("nextCursor", trunc.nextCursor);
 
   const buf = sqlDb.serialize();
   sqlDb.close();
@@ -239,6 +473,7 @@ header{background:#1e293b;border-bottom:1px solid #334155;padding:20px 24px;posi
 .logo{font-size:18px;font-weight:700;color:#60a5fa;letter-spacing:-.3px;white-space:nowrap}
 .meta{font-size:12px;color:#94a3b8}
 #banner{margin:20px 24px;padding:14px 18px;border-radius:10px;font-weight:600;font-size:15px;display:flex;align-items:center;gap:10px}
+#trunc-banner{margin:0 24px 16px;padding:12px 16px;border-radius:10px;font-size:13px;background:#422006;border:1px solid #78350f;color:#fcd34d}
 .intact{background:#064e3b;border:1px solid #065f46;color:#34d399}
 .tampered{background:#450a0a;border:1px solid #7f1d1d;color:#f87171}
 #controls{margin:0 24px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -273,6 +508,7 @@ header{background:#1e293b;border-bottom:1px solid #334155;padding:20px 24px;posi
   <div id="banner-inline" style="margin-left:auto;font-size:13px;color:#94a3b8">Verifying&hellip;</div>
 </header>
 <div id="banner" style="display:none"></div>
+<div id="trunc-banner" style="display:none"></div>
 <div id="controls" style="display:none">
   <input id="search" type="search" placeholder="Filter by model, prompt, ID&hellip;" autocomplete="off">
   <span id="count-label" style="font-size:12px;color:#64748b"></span>
@@ -281,13 +517,17 @@ header{background:#1e293b;border-bottom:1px solid #334155;padding:20px 24px;posi
 `;
 }
 
-function HTML_FOOT(count: number, date: string): string {
+function HTML_FOOT(_count: number, _date: string): string {
   return `<script>
 (async function(){
   // ── Parse full receipt dataset from embedded JSON blob ─────────────────────
   var dataEl = document.getElementById('receipts-data');
   var receipts = dataEl ? JSON.parse(dataEl.textContent || '[]') : [];
   var total = receipts.length;
+
+  // ── Parse export metadata (truncation state) ──────────────────────────────
+  var metaEl = document.getElementById('export-meta');
+  var meta = metaEl ? JSON.parse(metaEl.textContent || '{}') : {};
 
   // Sort ascending by createdAt (oldest first) for chain walk
   receipts.sort(function(a,b){ return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0; });
@@ -300,15 +540,19 @@ function HTML_FOOT(count: number, date: string): string {
 
   // ── Chain verification ────────────────────────────────────────────────────
   // chainHash = sha256("chain:" + promptHash + ":" + responseHash + ":" + prevHash|"GENESIS")
+  // When the export is truncated we cannot anchor against the predecessor of
+  // the first emitted row, so chain link verification is skipped and we only
+  // validate each row's self-consistency (chainHash recomputation).
   var prevHash = null;
   var tampered = 0;
   var verifyMap = {};
+  var truncated = !!meta.truncated;
   for(var i=0;i<receipts.length;i++){
     var r = receipts[i];
     var expectedPrevStr = prevHash === null ? 'GENESIS' : prevHash;
     var expectedChain = await sha256hex('chain:'+r.promptHash+':'+r.responseHash+':'+expectedPrevStr);
     var chainOk = r.chainHash === expectedChain;
-    var linkOk  = r.prevHash === prevHash;
+    var linkOk  = (truncated && i === 0) ? true : (r.prevHash === prevHash);
     var ok = chainOk && linkOk;
     if(!ok) tampered++;
     verifyMap[r.id] = ok;
@@ -336,6 +580,17 @@ function HTML_FOOT(count: number, date: string): string {
     bannerI.style.color='#f87171';
   }
   banner.style.display='flex';
+
+  // ── Truncation banner ─────────────────────────────────────────────────────
+  if(truncated){
+    var tb = document.getElementById('trunc-banner');
+    var nextHint = meta.nextCursor
+      ? ' Resume with <code>?cursor='+meta.nextCursor+'</code>.'
+      : '';
+    tb.innerHTML = 'This export was truncated at '+(meta.rowCap||'the row cap')+
+      ' rows. '+(meta.totalAvailable||'?')+' rows match your chain.'+nextHint;
+    tb.style.display='block';
+  }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function esc(s){

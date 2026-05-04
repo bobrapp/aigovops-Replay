@@ -554,6 +554,23 @@ paths:
         fields including hashes. The file is chunked so very large chains are
         never fully buffered in memory. Filename pattern:
         aigovops-chain-{userId}-{date}.jsonl
+
+
+        Abuse protection: per-user rate limit of EXPORT_RATE_LIMIT requests/hr
+        (default 30) shared across all three /export/* endpoints; per-response
+        row cap of EXPORT_ROW_CAP rows (default 5000). When the cap is hit the
+        response carries `X-Truncated: true` plus `X-Next-Cursor: <opaque>`
+        and emits a trailing `{"_meta": {...}}` JSONL line with the same data;
+        callers can resume with `?cursor=<X-Next-Cursor>`.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque pagination token returned via `X-Next-Cursor` on a
+            previous truncated response. When present, the export resumes
+            strictly after the row that produced the cursor.
+          schema:
+            type: string
       responses:
         "200":
           description: JSONL stream of receipts
@@ -562,12 +579,38 @@ paths:
               schema:
                 type: string
               description: attachment; filename="aigovops-chain-{userId}-{date}.jsonl"
+            X-Truncated:
+              schema:
+                type: string
+                enum: ["true", "false"]
+              description: "`true` when totalAvailable > rowCap and the body was capped."
+            X-Row-Cap:
+              schema:
+                type: string
+              description: Per-response row cap (EXPORT_ROW_CAP).
+            X-Total-Available:
+              schema:
+                type: string
+              description: Total rows matching `(uid, cursor)` server-side.
+            X-Next-Cursor:
+              schema:
+                type: string
+              description: Opaque cursor to resume after this response. Only set when truncated.
           content:
             application/x-ndjson:
               schema:
                 type: string
+        "400":
+          description: Invalid `cursor` query parameter
         "401":
           description: Unauthorized — authentication required
+        "429":
+          description: Per-user export rate limit exceeded; retry after the window resets.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              description: Seconds until the per-user limit resets.
 
   /export/html:
     get:
@@ -579,6 +622,19 @@ paths:
         embedded JavaScript that re-derives every chainHash client-side on load
         and shows a green "Chain intact" or red "Tampered" banner. No external
         dependencies. Filename pattern: aigovops-chain-{userId}-{date}.html
+
+
+        Abuse protection: same per-user rate limit and per-response row cap as
+        /export/jsonl. When the response is capped the embedded UI shows a
+        truncation banner and the response carries the same `X-Truncated`,
+        `X-Total-Available`, `X-Row-Cap` and `X-Next-Cursor` headers.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque pagination token (see /export/jsonl).
+          schema:
+            type: string
       responses:
         "200":
           description: Self-contained HTML bundle
@@ -587,12 +643,33 @@ paths:
               schema:
                 type: string
               description: attachment; filename="aigovops-chain-{userId}-{date}.html"
+            X-Truncated:
+              schema:
+                type: string
+                enum: ["true", "false"]
+            X-Row-Cap:
+              schema:
+                type: string
+            X-Total-Available:
+              schema:
+                type: string
+            X-Next-Cursor:
+              schema:
+                type: string
           content:
             text/html:
               schema:
                 type: string
+        "400":
+          description: Invalid `cursor` query parameter
         "401":
           description: Unauthorized — authentication required
+        "429":
+          description: Per-user export rate limit exceeded.
+          headers:
+            Retry-After:
+              schema:
+                type: string
 
   /export/sqlite:
     get:
@@ -604,6 +681,19 @@ paths:
         of the requesting user's receipts. Compatible with the sqlite3 CLI and
         DB Browser for SQLite. Filename pattern:
         aigovops-chain-{userId}-{date}.db
+
+
+        Abuse protection: same per-user rate limit and per-response row cap as
+        /export/jsonl. The .db ships with a parallel `export_meta` key/value
+        table (`truncated`, `rowCap`, `totalAvailable`, `nextCursor`) so
+        SQLite-only consumers can detect truncation without inspecting headers.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque pagination token (see /export/jsonl).
+          schema:
+            type: string
       responses:
         "200":
           description: SQLite database file
@@ -612,13 +702,34 @@ paths:
               schema:
                 type: string
               description: attachment; filename="aigovops-chain-{userId}-{date}.db"
+            X-Truncated:
+              schema:
+                type: string
+                enum: ["true", "false"]
+            X-Row-Cap:
+              schema:
+                type: string
+            X-Total-Available:
+              schema:
+                type: string
+            X-Next-Cursor:
+              schema:
+                type: string
           content:
             application/x-sqlite3:
               schema:
                 type: string
                 format: binary
+        "400":
+          description: Invalid `cursor` query parameter
         "401":
           description: Unauthorized — authentication required
+        "429":
+          description: Per-user export rate limit exceeded.
+          headers:
+            Retry-After:
+              schema:
+                type: string
 
   /webhooks:
     get:

@@ -78,6 +78,8 @@ export default function ReceiptDetailScreen() {
         ? "Policy passed."
         : receipt.policyStatus === "fail"
         ? "Policy failed."
+        : receipt.policyStatus === "error"
+        ? "Policy evaluation error."
         : "Policy pending review.";
 
     const text =

@@ -639,3 +639,24 @@ export const ListInteractionsPolicyStatus = {
 export type GetPublicVerificationParams = {
   token: string;
 };
+
+export type ExportChainJsonlParams = {
+  /**
+   * Opaque pagination token returned via `X-Next-Cursor` on a previous truncated response. When present, the export resumes strictly after the row that produced the cursor.
+   */
+  cursor?: string;
+};
+
+export type ExportChainHtmlParams = {
+  /**
+   * Opaque pagination token (see /export/jsonl).
+   */
+  cursor?: string;
+};
+
+export type ExportChainSqliteParams = {
+  /**
+   * Opaque pagination token (see /export/jsonl).
+   */
+  cursor?: string;
+};

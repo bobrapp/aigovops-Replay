@@ -618,6 +618,50 @@ export const GetChainHealthResponse = zod
   );
 
 /**
+ * Streams the authenticated user's receipts as newline-delimited JSON (one object per line), ordered oldest-first. Each line contains all receipt fields including hashes. The file is chunked so very large chains are never fully buffered in memory. Filename pattern: aigovops-chain-{userId}-{date}.jsonl
+
+Abuse protection: per-user rate limit of EXPORT_RATE_LIMIT requests/hr (default 30) shared across all three /export/* endpoints; per-response row cap of EXPORT_ROW_CAP rows (default 5000). When the cap is hit the response carries `X-Truncated: true` plus `X-Next-Cursor: <opaque>` and emits a trailing `{"_meta": {...}}` JSONL line with the same data; callers can resume with `?cursor=<X-Next-Cursor>`.
+
+ * @summary Export the full receipt chain as JSONL
+ */
+export const ExportChainJsonlQueryParams = zod.object({
+  cursor: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Opaque pagination token returned via `X-Next-Cursor` on a previous truncated response. When present, the export resumes strictly after the row that produced the cursor.",
+    ),
+});
+
+/**
+ * Returns a single .html file with all receipts rendered as cards plus embedded JavaScript that re-derives every chainHash client-side on load and shows a green "Chain intact" or red "Tampered" banner. No external dependencies. Filename pattern: aigovops-chain-{userId}-{date}.html
+
+Abuse protection: same per-user rate limit and per-response row cap as /export/jsonl. When the response is capped the embedded UI shows a truncation banner and the response carries the same `X-Truncated`, `X-Total-Available`, `X-Row-Cap` and `X-Next-Cursor` headers.
+
+ * @summary Export the receipt chain as a self-contained HTML bundle
+ */
+export const ExportChainHtmlQueryParams = zod.object({
+  cursor: zod.coerce
+    .string()
+    .optional()
+    .describe("Opaque pagination token (see \/export\/jsonl)."),
+});
+
+/**
+ * Returns a .db file containing an interactions table populated with all of the requesting user's receipts. Compatible with the sqlite3 CLI and DB Browser for SQLite. Filename pattern: aigovops-chain-{userId}-{date}.db
+
+Abuse protection: same per-user rate limit and per-response row cap as /export/jsonl. The .db ships with a parallel `export_meta` key/value table (`truncated`, `rowCap`, `totalAvailable`, `nextCursor`) so SQLite-only consumers can detect truncation without inspecting headers.
+
+ * @summary Export the receipt chain as a SQLite database
+ */
+export const ExportChainSqliteQueryParams = zod.object({
+  cursor: zod.coerce
+    .string()
+    .optional()
+    .describe("Opaque pagination token (see \/export\/jsonl)."),
+});
+
+/**
  * Returns all webhook endpoints configured by the authenticated user, ordered newest-first. Secrets are never returned; hasSecret:boolean indicates whether an HMAC secret is configured.
 
  * @summary List webhook endpoints

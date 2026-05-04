@@ -31,6 +31,9 @@ import type {
   DemoMintBody,
   DemoReceipt,
   ErrorEnvelope,
+  ExportChainHtmlParams,
+  ExportChainJsonlParams,
+  ExportChainSqliteParams,
   GetPublicVerificationParams,
   HandleBrowserLoginCallbackParams,
   HealthStatus,
@@ -2028,43 +2031,64 @@ export function useGetChainHealth<
 /**
  * Streams the authenticated user's receipts as newline-delimited JSON (one object per line), ordered oldest-first. Each line contains all receipt fields including hashes. The file is chunked so very large chains are never fully buffered in memory. Filename pattern: aigovops-chain-{userId}-{date}.jsonl
 
+Abuse protection: per-user rate limit of EXPORT_RATE_LIMIT requests/hr (default 30) shared across all three /export/* endpoints; per-response row cap of EXPORT_ROW_CAP rows (default 5000). When the cap is hit the response carries `X-Truncated: true` plus `X-Next-Cursor: <opaque>` and emits a trailing `{"_meta": {...}}` JSONL line with the same data; callers can resume with `?cursor=<X-Next-Cursor>`.
+
  * @summary Export the full receipt chain as JSONL
  */
-export const getExportChainJsonlUrl = () => {
-  return `/api/export/jsonl`;
+export const getExportChainJsonlUrl = (params?: ExportChainJsonlParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/export/jsonl?${stringifiedParams}`
+    : `/api/export/jsonl`;
 };
 
 export const exportChainJsonl = async (
+  params?: ExportChainJsonlParams,
   options?: RequestInit,
 ): Promise<Response> => {
-  return customFetch<Response>(getExportChainJsonlUrl(), {
+  return customFetch<Response>(getExportChainJsonlUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getExportChainJsonlQueryKey = () => {
-  return [`/api/export/jsonl`] as const;
+export const getExportChainJsonlQueryKey = (
+  params?: ExportChainJsonlParams,
+) => {
+  return [`/api/export/jsonl`, ...(params ? [params] : [])] as const;
 };
 
 export const getExportChainJsonlQueryOptions = <
   TData = Awaited<ReturnType<typeof exportChainJsonl>>,
   TError = ErrorType<void>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof exportChainJsonl>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ExportChainJsonlParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportChainJsonl>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getExportChainJsonlQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getExportChainJsonlQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof exportChainJsonl>>
-  > = ({ signal }) => exportChainJsonl({ signal, ...requestOptions });
+  > = ({ signal }) => exportChainJsonl(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof exportChainJsonl>>,
@@ -2085,15 +2109,18 @@ export type ExportChainJsonlQueryError = ErrorType<void>;
 export function useExportChainJsonl<
   TData = Awaited<ReturnType<typeof exportChainJsonl>>,
   TError = ErrorType<void>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof exportChainJsonl>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getExportChainJsonlQueryOptions(options);
+>(
+  params?: ExportChainJsonlParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportChainJsonl>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportChainJsonlQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -2105,43 +2132,61 @@ export function useExportChainJsonl<
 /**
  * Returns a single .html file with all receipts rendered as cards plus embedded JavaScript that re-derives every chainHash client-side on load and shows a green "Chain intact" or red "Tampered" banner. No external dependencies. Filename pattern: aigovops-chain-{userId}-{date}.html
 
+Abuse protection: same per-user rate limit and per-response row cap as /export/jsonl. When the response is capped the embedded UI shows a truncation banner and the response carries the same `X-Truncated`, `X-Total-Available`, `X-Row-Cap` and `X-Next-Cursor` headers.
+
  * @summary Export the receipt chain as a self-contained HTML bundle
  */
-export const getExportChainHtmlUrl = () => {
-  return `/api/export/html`;
+export const getExportChainHtmlUrl = (params?: ExportChainHtmlParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/export/html?${stringifiedParams}`
+    : `/api/export/html`;
 };
 
 export const exportChainHtml = async (
+  params?: ExportChainHtmlParams,
   options?: RequestInit,
 ): Promise<string> => {
-  return customFetch<string>(getExportChainHtmlUrl(), {
+  return customFetch<string>(getExportChainHtmlUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getExportChainHtmlQueryKey = () => {
-  return [`/api/export/html`] as const;
+export const getExportChainHtmlQueryKey = (params?: ExportChainHtmlParams) => {
+  return [`/api/export/html`, ...(params ? [params] : [])] as const;
 };
 
 export const getExportChainHtmlQueryOptions = <
   TData = Awaited<ReturnType<typeof exportChainHtml>>,
   TError = ErrorType<void>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof exportChainHtml>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ExportChainHtmlParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportChainHtml>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getExportChainHtmlQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getExportChainHtmlQueryKey(params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof exportChainHtml>>> = ({
     signal,
-  }) => exportChainHtml({ signal, ...requestOptions });
+  }) => exportChainHtml(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof exportChainHtml>>,
@@ -2162,15 +2207,18 @@ export type ExportChainHtmlQueryError = ErrorType<void>;
 export function useExportChainHtml<
   TData = Awaited<ReturnType<typeof exportChainHtml>>,
   TError = ErrorType<void>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof exportChainHtml>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getExportChainHtmlQueryOptions(options);
+>(
+  params?: ExportChainHtmlParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportChainHtml>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportChainHtmlQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -2182,43 +2230,64 @@ export function useExportChainHtml<
 /**
  * Returns a .db file containing an interactions table populated with all of the requesting user's receipts. Compatible with the sqlite3 CLI and DB Browser for SQLite. Filename pattern: aigovops-chain-{userId}-{date}.db
 
+Abuse protection: same per-user rate limit and per-response row cap as /export/jsonl. The .db ships with a parallel `export_meta` key/value table (`truncated`, `rowCap`, `totalAvailable`, `nextCursor`) so SQLite-only consumers can detect truncation without inspecting headers.
+
  * @summary Export the receipt chain as a SQLite database
  */
-export const getExportChainSqliteUrl = () => {
-  return `/api/export/sqlite`;
+export const getExportChainSqliteUrl = (params?: ExportChainSqliteParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/export/sqlite?${stringifiedParams}`
+    : `/api/export/sqlite`;
 };
 
 export const exportChainSqlite = async (
+  params?: ExportChainSqliteParams,
   options?: RequestInit,
 ): Promise<Blob> => {
-  return customFetch<Blob>(getExportChainSqliteUrl(), {
+  return customFetch<Blob>(getExportChainSqliteUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getExportChainSqliteQueryKey = () => {
-  return [`/api/export/sqlite`] as const;
+export const getExportChainSqliteQueryKey = (
+  params?: ExportChainSqliteParams,
+) => {
+  return [`/api/export/sqlite`, ...(params ? [params] : [])] as const;
 };
 
 export const getExportChainSqliteQueryOptions = <
   TData = Awaited<ReturnType<typeof exportChainSqlite>>,
   TError = ErrorType<void>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof exportChainSqlite>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ExportChainSqliteParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportChainSqlite>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getExportChainSqliteQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getExportChainSqliteQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof exportChainSqlite>>
-  > = ({ signal }) => exportChainSqlite({ signal, ...requestOptions });
+  > = ({ signal }) => exportChainSqlite(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof exportChainSqlite>>,
@@ -2239,15 +2308,18 @@ export type ExportChainSqliteQueryError = ErrorType<void>;
 export function useExportChainSqlite<
   TData = Awaited<ReturnType<typeof exportChainSqlite>>,
   TError = ErrorType<void>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof exportChainSqlite>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getExportChainSqliteQueryOptions(options);
+>(
+  params?: ExportChainSqliteParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportChainSqlite>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportChainSqliteQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

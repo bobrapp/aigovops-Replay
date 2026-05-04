@@ -39,6 +39,8 @@ export function ReceiptCard({ item }: ReceiptCardProps) {
       ? "passed policy"
       : item.policyStatus === "fail"
       ? "failed policy"
+      : item.policyStatus === "error"
+      ? "policy evaluation error"
       : "policy pending";
 
   const accessibilityLabel = `Receipt · ${item.model} · ${statusLabel} · ${date} at ${time}. Prompt: ${promptPreview}${promptPreview.length >= 80 ? "…" : ""}`;
