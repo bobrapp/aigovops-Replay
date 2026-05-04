@@ -1,6 +1,42 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startWebhookWorker } from "./lib/webhook-worker";
+import { listRoutes } from "./lib/list-routes";
+
+// ---------------------------------------------------------------------------
+// `--print-routes` — Dev-tooling mode used by scripts/check-spec-drift.ts.
+//
+// When invoked with this flag the process introspects the live Express app's
+// router stack, prints the registered routes as JSON to stdout (delimited by
+// `__ROUTES_BEGIN__` / `__ROUTES_END__` markers), and exits without binding
+// a port or starting any background workers.  This gives the OpenAPI drift
+// checker the *actual* runtime route table instead of having to regex-scrape
+// the source files.
+// ---------------------------------------------------------------------------
+if (process.argv.includes("--print-routes")) {
+  // Express 5 exposes the top-level router as a lazy getter at `app.router`;
+  // Express 4 stored it eagerly at `app._router`.  Try both so this tooling
+  // survives a minor framework upgrade.
+  const appUnknown = app as unknown as {
+    router?: import("express").IRouter;
+    _router?: import("express").IRouter;
+  };
+  const rootRouter = appUnknown.router ?? appUnknown._router;
+  if (!rootRouter) {
+    process.stderr.write(
+      "[--print-routes] Express app has no router yet (neither .router nor ._router)\n",
+    );
+    process.exit(2);
+  }
+  // The combined router is mounted at "/api" in app.ts — strip that prefix so
+  // emitted paths line up with the spec (which uses /healthz, /interactions, …).
+  const routes = listRoutes(rootRouter, "")
+    .filter((r) => r.path.startsWith("/api/") || r.path === "/api")
+    .map((r) => ({ method: r.method, path: r.path.replace(/^\/api/, "") || "/" }))
+    .sort((a, b) => `${a.method} ${a.path}`.localeCompare(`${b.method} ${b.path}`));
+  process.stdout.write(`__ROUTES_BEGIN__\n${JSON.stringify(routes)}\n__ROUTES_END__\n`);
+  process.exit(0);
+}
 
 const rawPort = process.env["PORT"];
 

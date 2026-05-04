@@ -30,9 +30,10 @@
  * Usage:
  *   pnpm --filter @workspace/scripts run test:spec
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import YAML from "yaml";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -185,26 +186,67 @@ for (const [path, methods] of Object.entries(spec.paths ?? {})) {
   }
 }
 
-const routesDir = resolve(ROOT, "artifacts/api-server/src/routes");
-const SKIP_FILES = new Set(["index.ts"]);
-const routeFiles = readdirSync(routesDir).filter(
-  (f) => f.endsWith(".ts") && !SKIP_FILES.has(f),
-);
-
-const ROUTE_REGEX =
-  /router\.(get|post|put|patch|delete)\s*\(\s*["'`]([^"'`]+)["'`]/g;
-
-const expressRoutes = new Set<string>();
-for (const file of routeFiles) {
-  const content = readFileSync(resolve(routesDir, file), "utf8");
-  ROUTE_REGEX.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = ROUTE_REGEX.exec(content)) !== null) {
-    const method = match[1].toUpperCase();
-    const path = match[2];
-    expressRoutes.add(`${method} ${normalize(path)}`);
+// Runtime route introspection ─────────────────────────────────────────────
+//
+// The previous implementation regex-scraped each route file's source for
+// `router.<method>(…)` calls.  That approach silently misses any route added
+// with `app.use(subRouter)`, route patterns built from variables, paths
+// composed from constants, or any other dynamic registration — exactly the
+// patterns we should be testing.
+//
+// Instead we run the *real* Express app in a one-shot `--print-routes`
+// mode (see artifacts/api-server/src/index.ts) and read the routes the live
+// router actually exposes.  This guarantees the drift check sees every
+// route a request can reach, regardless of how it was registered.
+function getExpressRoutesFromRuntime(): Set<string> {
+  const apiBin = resolve(ROOT, "artifacts/api-server/dist/index.mjs");
+  if (!existsSync(apiBin)) {
+    console.error(
+      `[spec-drift] api-server bundle not found at ${apiBin}\n` +
+        `             Run \`pnpm --filter @workspace/api-server run build\` first.`,
+    );
+    process.exit(1);
   }
+
+  const result = spawnSync("node", [apiBin, "--print-routes"], {
+    encoding: "utf8",
+    timeout: 30_000,
+    // Provide the env vars app.ts needs to construct the app without crashing,
+    // but never bind a port — the --print-routes branch exits before listen().
+    env: {
+      ...process.env,
+      NODE_ENV: process.env.NODE_ENV ?? "test",
+      PORT: process.env.PORT ?? "0",
+      DATABASE_URL: process.env.DATABASE_URL ?? "postgres://noop@127.0.0.1:0/noop",
+    },
+  });
+
+  if (result.status !== 0) {
+    console.error(
+      `[spec-drift] --print-routes exited with status ${result.status}\n` +
+        `STDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+    );
+    process.exit(1);
+  }
+
+  const out = result.stdout;
+  const begin = out.indexOf("__ROUTES_BEGIN__");
+  const end = out.indexOf("__ROUTES_END__");
+  if (begin === -1 || end === -1) {
+    console.error(
+      `[spec-drift] could not find route markers in --print-routes output:\n${out}`,
+    );
+    process.exit(1);
+  }
+  const json = out.slice(begin + "__ROUTES_BEGIN__".length, end).trim();
+  const routes = JSON.parse(json) as Array<{ method: string; path: string }>;
+
+  const set = new Set<string>();
+  for (const r of routes) set.add(`${r.method} ${normalize(r.path)}`);
+  return set;
 }
+
+const expressRoutes = getExpressRoutesFromRuntime();
 
 const inExpressNotInSpec: string[] = [];
 const inSpecNotInExpress: string[] = [];

@@ -47,3 +47,9 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Playwright generated artifacts (re-created on every test run)
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+playwright-report/
+test-results/
