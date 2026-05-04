@@ -153,7 +153,12 @@ test.describe("OIDC auth flow + authenticated endpoints", () => {
     expect(resp.status()).toBe(404);
   });
 
-  test("GET /interactions/:id/verify → 200 with valid field", async ({ request }) => {
+  test("GET /interactions/:id/verify → 200 valid=true for freshly minted receipt", async ({ request }) => {
+    // Mint a fresh receipt — every cryptographic check (prompt hash, response
+    // hash, chain hash self-consistency, predecessor existence, single-genesis,
+    // no fork) must pass for a brand-new receipt.  If any returns false we have
+    // a regression in the mint or hashing pipeline that this test exists to
+    // catch — a `typeof === "boolean"` shape check would silently allow it.
     const createResp = await request.post(`${BASE}/interactions`, {
       headers: { Authorization: `Bearer ${token}` },
       data: {
@@ -169,8 +174,31 @@ test.describe("OIDC auth flow + authenticated endpoints", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(verifyResp.status()).toBe(200);
-    const body = await verifyResp.json() as { valid: boolean };
-    expect(typeof body.valid).toBe("boolean");
+    const body = await verifyResp.json() as {
+      id: string;
+      valid: boolean;
+      promptHashMatch: boolean;
+      responseHashMatch: boolean;
+      chainIntact: boolean;
+      details: string;
+      checkedAt: string;
+    };
+
+    // Assert the returned id matches what we asked about (no cross-receipt drift)
+    expect(body.id).toBe(created.id);
+
+    // Hard assertions — freshly minted receipts must verify successfully.  A
+    // verify pipeline that always returns false (or that swaps any of the four
+    // sub-checks to false for a clean receipt) will fail here.
+    expect(body.promptHashMatch, "prompt hash should match for freshly minted receipt").toBe(true);
+    expect(body.responseHashMatch, "response hash should match for freshly minted receipt").toBe(true);
+    expect(body.chainIntact, "chain should be intact for freshly minted receipt").toBe(true);
+    expect(body.valid, "freshly minted receipt must verify as valid").toBe(true);
+
+    // The PASS-path details string is part of the public verify contract;
+    // pin it so a regression that flips to the FAIL message doesn't slip past.
+    expect(body.details).toMatch(/cryptographic checks passed/i);
+    expect(typeof body.checkedAt).toBe("string");
   });
 
   test("GET /chain → 200 with length field", async ({ request }) => {
