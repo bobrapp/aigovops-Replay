@@ -22,13 +22,24 @@ async function buildAll() {
     outdir: distDir,
     outExtension: { ".js": ".mjs" },
     logLevel: "info",
-    // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
-    // Some of the packages below may not be imported or installed, but we're adding them in case they are in the future.
-    // Examples of unbundleable packages:
-    // - uses native modules and loads them dynamically (e.g. sharp)
-    // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
+    minify: true,
+    // Packages listed here are not bundled; they are resolved from node_modules
+    // at runtime.  Only packages declared in api-server's own `dependencies` (not
+    // devDependencies) are safe to externalize — they are guaranteed present in
+    // both dev and production environments.
+    //
+    // Packages that are ONLY in workspace-sibling deps (e.g. `pg` which is a dep
+    // of @workspace/db) must NOT be externalized: Node resolves externals relative
+    // to the bundle location, and those packages are not symlinked into
+    // artifacts/api-server/node_modules.
+    //
+    // pino / pino-http / pino-pretty / thread-stream are kept bundled so that
+    // esbuild-plugin-pino can generate self-contained worker bundles (pino-pretty
+    // is a devDependency absent from production node_modules).
     external: [
+      // ── Binary addons ──────────────────────────────────────────────────────
       "*.node",
+      // ── Native / platform-specific packages (never bundleable) ─────────────
       "sharp",
       "better-sqlite3",
       "sqlite3",
@@ -49,7 +60,18 @@ async function buildAll() {
       "pg-native",
       "oracledb",
       "mongodb-client-encryption",
-      "nodemailer",
+      // ── api-server direct runtime dependencies (large, safe to externalize) ─
+      // These are in api-server/package.json `dependencies` so they are present
+      // in node_modules at runtime in both dev and production.
+      "nodemailer",     // explicit in deps
+      "zod",            // 266 KB — largest single contributor after @google/genai
+      "openid-client",  // 50 KB direct + oauth4webapi/ip-address as its own deps
+      "express",        // removes express + mime-db + mime-types from bundle
+      "cors",
+      "helmet",
+      "cookie-parser",
+      "express-rate-limit",
+      // ── Cloud / infra SDKs (not installed, defensive externals) ────────────
       "handlebars",
       "knex",
       "typeorm",

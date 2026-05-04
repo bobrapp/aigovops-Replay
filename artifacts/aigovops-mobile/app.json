@@ -25,11 +25,15 @@
         "NSPrivacyAccessedAPITypes": [
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
-            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
           },
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryPasteboard",
-            "NSPrivacyAccessedAPITypeReasons": ["1C8F.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "1C8F.1"
+            ]
           }
         ],
         "NSPrivacyCollectedDataTypes": [],
@@ -51,7 +55,8 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-local-authentication"
+      "expo-local-authentication",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
