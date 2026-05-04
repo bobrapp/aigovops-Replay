@@ -7,9 +7,14 @@
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug"
   },
+  "dependencies": {
+    "@workspace/db": "workspace:*",
+    "pg": "^8.20.0"
+  },
   "devDependencies": {
     "@playwright/test": "^1.50.0",
     "@types/node": "catalog:",
+    "@types/pg": "^8.18.0",
     "jose": "^6.0.0",
     "yaml": "^2.0.0"
   }

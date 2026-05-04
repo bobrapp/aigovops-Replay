@@ -45,6 +45,32 @@ A cryptographically signed receipt system for every AI interaction. Every prompt
 ## DB Tables
 - `interactions` — AI interaction receipts with crypto hashes
 - `policies` — Policy-as-code rules (JS expressions)
-- `activity_log` — Audit trail of all events
+- `activity_log` — Audit trail of all events. Hash-chained via `log_hash` /
+  `prev_log_hash`. The 0001 migration left pre-migration rows with NULL
+  hashes that the verification walker silently skipped. Run the backfill
+  (below) once per environment to repair the chain end-to-end.
+
+## Operator Runbook — Audit-log hash chain backfill
+
+Closes the legacy NULL-hash gap and pins the deferred NOT-NULL trigger to
+`seq > 0` (covers every row going forward). Idempotent — safe to re-run.
+
+```bash
+# Dry-run first (always): reports counts + first/last seq it would touch.
+pnpm --filter @workspace/scripts run backfill:audit-log -- --dry-run
+
+# Apply: rewrites drifted rows in a single advisory-locked transaction
+# and lowers the trigger cutoff to 0.
+pnpm --filter @workspace/scripts run backfill:audit-log
+```
+
+Success looks like: `applied: true`, `nullHashRows: 0` on a second pass,
+and `GET /api/audit/chain-status` returning `intact: true` with `tampered: 0`
+and `total === hashableEntries`.
+
+Implementation: `lib/db/src/audit-log-backfill.ts` (the function) and
+`scripts/src/audit-log-backfill.ts` (the CLI). `buildLogHash` is exported
+from `@workspace/db` so the runtime insert path and the backfill share one
+canonical formula.
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.

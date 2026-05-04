@@ -21,7 +21,11 @@ export default defineConfig({
   projects: [
     {
       name: "api",
-      testMatch: /api\.spec\.ts$/,
+      // The "api" project covers any pure HTTP/db suite running against the
+      // spawned mock-OIDC API server. Add new files by giving them a name
+      // ending in `.spec.ts` and they will be picked up automatically — except
+      // proxy-browser.spec.ts which is owned by the "browser" project below.
+      testMatch: /(api|audit-backfill)\.spec\.ts$/,
     },
     {
       name: "browser",

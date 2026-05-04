@@ -14,3 +14,5 @@ export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";
+export { sha256, buildLogHash } from "./audit-crypto";
+export { backfillAuditLogHashes, type BackfillSummary } from "./audit-log-backfill";

@@ -6,7 +6,8 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:spec": "tsx ./src/check-spec-drift.ts"
+    "test:spec": "tsx ./src/check-spec-drift.ts",
+    "backfill:audit-log": "tsx ./src/audit-log-backfill.ts"
   },
   "dependencies": {
     "@workspace/db": "workspace:*"
