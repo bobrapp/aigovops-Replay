@@ -40,6 +40,7 @@ interface ChainStatus {
   intact: boolean;
   tampered: number;
   headHash: string | null;
+  mismatchedSeqs?: string[];
 }
 
 async function adminLogin(request: APIRequestContext): Promise<void> {

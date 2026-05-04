@@ -73,4 +73,14 @@ Implementation: `lib/db/src/audit-log-backfill.ts` (the function) and
 from `@workspace/db` so the runtime insert path and the backfill share one
 canonical formula.
 
+By design the backfill performs a **full-chain canonical rewrite** — it
+walks every row from `seq = 0` and re-computes `prev_log_hash` / `log_hash`
+under the current canonical formula, not just the legacy NULL-hash rows.
+That is intentional: it lets a single run normalize any post-migration
+drift (e.g. rows written before a hash-formula fix, or rows with stale
+`prev_log_hash` after an out-of-band repair) without operators needing to
+classify each anomaly. The advisory lock (`0x4C4F4748`) ensures only one
+rewrite runs at a time and the trigger cutoff is only lowered after a
+successful apply.
+
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
