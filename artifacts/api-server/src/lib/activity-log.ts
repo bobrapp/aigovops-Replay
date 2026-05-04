@@ -13,7 +13,7 @@
  *   Solution: acquire pg_advisory_xact_lock inside a transaction before reading
  *   the latest logHash. The lock is automatically released at the end of the
  *   transaction, so the critical window is exactly:
- *     lock → read-prev (by seq DESC) → insert → RETURNING createdAt+seq → hash → update
+ *     lock → read-prev (by seq DESC) → SELECT now() → hash → insert
  *
  * Monotonic ordering via seq (BIGSERIAL):
  *   created_at is microsecond-precision but two rows acquired under the same
@@ -27,10 +27,19 @@
  *   (ORDER BY seq ASC) use seq as the sole ordering key.
  *
  * Timestamp guarantee:
- *   The row is inserted with DEFAULT now() so PostgreSQL assigns created_at.
- *   INSERT … RETURNING gives us back both createdAt and seq. logHash is then
- *   derived from the DB-returned createdAt so the hashed and stored timestamps
- *   are always identical.
+ *   We call `SELECT now()` inside the lock window and pass that timestamp
+ *   explicitly as created_at on the INSERT. Because both the stored value and
+ *   the hashed value come from the same `now()` call, they are always identical.
+ *   PostgreSQL's now() is stable within a transaction, so no drift is possible.
+ *
+ * Why not the two-step INSERT(null) → RETURNING → UPDATE pattern?
+ *   A DEFERRABLE INITIALLY DEFERRED constraint trigger on activity_log fires at
+ *   COMMIT time with the row state *at the time of the INSERT* (not the current
+ *   row state). Inserting with log_hash=null and later updating it to the real
+ *   hash still triggers "log_hash must not be NULL" at commit because the trigger
+ *   evaluates the INSERT event's NEW row. The single-step pattern avoids the null
+ *   placeholder entirely: the trigger sees log_hash = computed_hash at INSERT time
+ *   and passes the check.
  *
  * Backward compatibility:
  *   Pre-migration rows with NULL logHash are not affected. The chain walk in
@@ -62,7 +71,7 @@ export async function insertActivityLog(params: {
   try {
     await db.transaction(async (tx) => {
       // Serialize all audit-log writes globally so that the prevLogHash
-      // lookup, the INSERT, and the logHash derivation are one atomic unit.
+      // lookup, the hash computation, and the INSERT are one atomic unit.
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${AUDIT_LOG_LOCK_KEY})`);
 
       // Read the predecessor using seq — the only fully deterministic order.
@@ -77,33 +86,33 @@ export async function insertActivityLog(params: {
 
       const prevLogHash = latest?.logHash ?? null;
 
-      // Insert with logHash=null (placeholder); let PG assign created_at + seq.
-      // RETURNING gives us the DB-assigned values so our hash is derived from
-      // the values that will actually be stored.
-      const [inserted] = await tx
-        .insert(activityLogTable)
-        .values({
-          id,
-          type: params.type,
-          interactionId: params.interactionId,
-          summary: params.summary,
-          prevLogHash,
-          logHash: null,
-        })
-        .returning({ createdAt: activityLogTable.createdAt });
+      // Read the current timestamp from PostgreSQL. now() is stable within a
+      // transaction, so this value will be identical to the created_at we store.
+      // We use it to pre-compute the hash before the INSERT so that the row is
+      // never written with log_hash=null (avoiding the deferred-trigger issue
+      // described in the module comment above).
+      const nowResult = await tx.execute<{ now: string }>(sql`SELECT now() AS now`);
+      const now = new Date(nowResult.rows[0].now);
 
       const logHash = buildLogHash({
         type: params.type,
         interactionId: params.interactionId,
         summary: params.summary,
-        createdAt: inserted.createdAt,
+        createdAt: now,
         prevLogHash,
       });
 
-      await tx
-        .update(activityLogTable)
-        .set({ logHash })
-        .where(sql`id = ${id}`);
+      // Single INSERT with the pre-computed hash. The deferred constraint trigger
+      // sees log_hash = hash_string (non-null) at INSERT time and passes.
+      await tx.insert(activityLogTable).values({
+        id,
+        type: params.type,
+        interactionId: params.interactionId,
+        summary: params.summary,
+        createdAt: now,
+        prevLogHash,
+        logHash,
+      });
     });
   } catch (err) {
     logger.error({ err, params }, "Failed to insert activity log entry");
