@@ -1,6 +1,6 @@
-# 17 — "Error" filter option on the receipts list
+# 15 — "Error" filter option on the receipts list
 
-- **Priority:** GOOD TO HAVE
+- **Priority:** GROWTH (nice-to-have)
 - **Source task:** #34
 - **Parent feature:** #25 Security Hardening Batch 2
 

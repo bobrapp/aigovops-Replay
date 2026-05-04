@@ -1,6 +1,6 @@
-# 19 — API build-size guard in CI
+# 17 — API build-size guard in CI
 
-- **Priority:** GOOD TO HAVE
+- **Priority:** DEVOPS (internal hygiene)
 - **Source task:** #48
 - **Parent feature:** #30 Mobile Package Updates & API Bundle Trim
 

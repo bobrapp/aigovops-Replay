@@ -1,6 +1,6 @@
-# 08 — Owner-revocable share links
+# 03 — Owner-revocable share links
 
-- **Priority:** URGENT
+- **Priority:** CRITICAL
 - **Source task:** #44
 - **Parent feature:** #28 Public Verification Links & Chain Health
 

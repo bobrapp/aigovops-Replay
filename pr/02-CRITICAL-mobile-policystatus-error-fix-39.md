@@ -1,6 +1,6 @@
-# 07 — Fix `policyStatus: 'error'` type mismatch on mobile
+# 02 — Fix `policyStatus: 'error'` type mismatch on mobile
 
-- **Priority:** URGENT
+- **Priority:** CRITICAL
 - **Source task:** #39
 - **Parent feature:** #27 Portable Chain Export
 

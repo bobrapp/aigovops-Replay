@@ -1,6 +1,6 @@
-# 14 — Audit-log entry list on the Audit page
+# 09 — Audit-log entry list on the Audit page
 
-- **Priority:** GOOD TO HAVE
+- **Priority:** URGENT
 - **Source task:** #38
 - **Parent feature:** #26 Activity Log Integrity Hashing
 

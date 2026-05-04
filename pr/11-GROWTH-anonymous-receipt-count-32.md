@@ -1,6 +1,6 @@
 # 11 — Live receipt count for anonymous visitors
 
-- **Priority:** GOOD TO HAVE
+- **Priority:** GROWTH (nice-to-have)
 - **Source task:** #32
 - **Parent feature:** #24 Hero & Landing Page Redesign
 

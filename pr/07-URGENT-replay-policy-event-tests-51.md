@@ -1,4 +1,4 @@
-# 06 — Replay & policy-check events in the e2e suite
+# 07 — Replay & policy-check events in the e2e suite
 
 - **Priority:** URGENT
 - **Source task:** #51

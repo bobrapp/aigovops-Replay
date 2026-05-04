@@ -1,6 +1,6 @@
 # 12 — Open Graph / Twitter share preview cards
 
-- **Priority:** GOOD TO HAVE
+- **Priority:** GROWTH (nice-to-have)
 - **Source task:** #33
 - **Parent feature:** #24 Hero & Landing Page Redesign
 

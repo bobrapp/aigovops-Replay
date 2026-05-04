@@ -1,4 +1,4 @@
-# 10 — Configurable email recipients for violation alerts
+# 08 — Configurable email recipients for violation alerts
 
 - **Priority:** URGENT
 - **Source task:** #45

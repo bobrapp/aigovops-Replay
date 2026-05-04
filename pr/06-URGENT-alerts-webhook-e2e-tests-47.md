@@ -1,4 +1,4 @@
-# 05 — E2E tests for the Alerts page + webhook delivery
+# 06 — E2E tests for the Alerts page + webhook delivery
 
 - **Priority:** URGENT
 - **Source task:** #47

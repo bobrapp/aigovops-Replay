@@ -1,6 +1,6 @@
-# 04 — Automated tests for the audit-log chain
+# 05 — Automated tests for the audit-log chain
 
-- **Priority:** URGENT
+- **Priority:** CRITICAL
 - **Source task:** #37
 - **Parent feature:** #26 Activity Log Integrity Hashing
 

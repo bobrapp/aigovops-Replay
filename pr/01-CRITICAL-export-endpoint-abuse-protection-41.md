@@ -1,4 +1,4 @@
-# 03 — Protect chain export endpoints from abuse
+# 01 — Protect chain export endpoints from abuse
 
 - **Priority:** CRITICAL
 - **Source task:** #41

@@ -1,6 +1,6 @@
-# 15 — Live policy-violation feed
+# 14 — Live policy-violation feed
 
-- **Priority:** GOOD TO HAVE
+- **Priority:** GROWTH (nice-to-have)
 - **Source task:** #46
 - **Parent feature:** #29 Policy Violation Webhooks & Alerts
 

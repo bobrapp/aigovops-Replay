@@ -1,6 +1,6 @@
-# 09 — Auto-expire share links
+# 04 — Auto-expire share links
 
-- **Priority:** URGENT
+- **Priority:** CRITICAL
 - **Source task:** #42
 - **Parent feature:** #28 Public Verification Links & Chain Health
 

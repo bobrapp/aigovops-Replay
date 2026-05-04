@@ -1,4 +1,10 @@
-# 02 — Audit-log hash chain backfill (duplicate of 01)
+> **STATUS: DONE — merged via planning Task #53.**
+  > Backfill landed on `main` in commit `b2364fd` (Audit-log hash chain
+  > backfill — consolidates #36 + #50). Archived here for history. The
+  > live audit chain is now intact end-to-end and `/audit/chain-status`
+  > reports `mismatchedSeqs: []`. See the runbook in `replit.md`.
+
+  # 02 — Audit-log hash chain backfill (duplicate of 01)
 
 - **Priority:** CRITICAL
 - **Source task:** #50

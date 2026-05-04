@@ -1,6 +1,6 @@
 # 16 — Surface rate-limit configuration in the admin panel
 
-- **Priority:** GOOD TO HAVE
+- **Priority:** DEVOPS (internal hygiene)
 - **Source task:** #35
 - **Parent feature:** #25 Security Hardening Batch 2
 

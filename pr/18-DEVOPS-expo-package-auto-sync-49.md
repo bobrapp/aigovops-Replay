@@ -1,6 +1,6 @@
-# 20 — Auto-sync Expo packages
+# 18 — Auto-sync Expo packages
 
-- **Priority:** GOOD TO HAVE
+- **Priority:** DEVOPS (internal hygiene)
 - **Source task:** #49
 - **Parent feature:** #30 Mobile Package Updates & API Bundle Trim
 

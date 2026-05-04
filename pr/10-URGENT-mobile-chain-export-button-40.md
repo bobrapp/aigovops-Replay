@@ -1,6 +1,6 @@
-# 18 — Mobile chain-screen export button
+# 10 — Mobile chain-screen export button
 
-- **Priority:** GOOD TO HAVE
+- **Priority:** URGENT
 - **Source task:** #40
 - **Parent feature:** #27 Portable Chain Export
 

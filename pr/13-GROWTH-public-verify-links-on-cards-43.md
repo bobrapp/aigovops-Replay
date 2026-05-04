@@ -1,6 +1,6 @@
 # 13 — Public verification links on receipt cards
 
-- **Priority:** GOOD TO HAVE
+- **Priority:** GROWTH (nice-to-have)
 - **Source task:** #43
 - **Parent feature:** #28 Public Verification Links & Chain Health
 
