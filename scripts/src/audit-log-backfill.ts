@@ -28,6 +28,9 @@ async function main(): Promise<void> {
   console.log(`[audit-backfill] Done in ${ms}ms`);
   console.log(`  totalRows         : ${summary.totalRows}`);
   console.log(`  nullHashRows      : ${summary.nullHashRows}`);
+  console.log(`  nullMinSeq        : ${summary.nullMinSeq ?? "—"}`);
+  console.log(`  nullMaxSeq        : ${summary.nullMaxSeq ?? "—"}`);
+  console.log(`  legacyCutoff      : ${summary.legacyCutoff}`);
   console.log(`  rowsThatWillChange: ${summary.rowsThatWillChange}`);
   console.log(`  firstChangedSeq   : ${summary.firstChangedSeq ?? "—"}`);
   console.log(`  lastChangedSeq    : ${summary.lastChangedSeq ?? "—"}`);

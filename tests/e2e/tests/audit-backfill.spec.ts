@@ -26,7 +26,7 @@
  */
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import pg from "pg";
-import { backfillAuditLogHashes } from "@workspace/db";
+import { backfillAuditLogHashes, AuditLogChainInconsistencyError } from "@workspace/db";
 import { TEST_API_PORT } from "../src/global-setup";
 
 const BASE = `http://127.0.0.1:${TEST_API_PORT}/api`;
@@ -72,6 +72,11 @@ test.describe("audit-log backfill", () => {
     const summary = await backfillAuditLogHashes({ dryRun: true });
     expect(summary.dryRun).toBe(true);
     expect(summary.applied).toBe(false);
+    // legacyCutoff and the null-stat fields must be present (operator
+    // observability contract from task #53 step 1).
+    expect(typeof summary.legacyCutoff).toBe("string");
+    expect(summary).toHaveProperty("nullMinSeq");
+    expect(summary).toHaveProperty("nullMaxSeq");
     // We don't assert rowsThatWillChange === 0 here because earlier tests in
     // the same suite may have left an inconsistent chain (rare). The strong
     // contract is that dryRun never writes — verified by `applied: false` and
@@ -88,7 +93,20 @@ test.describe("audit-log backfill", () => {
     const insertedIds: string[] = [];
 
     try {
-      // ── Seed: 3 NULL-hash legacy rows (appended at highest seq) ─────────
+      // ── Reset state: simulate a brand-new pre-migration database ─────────
+      // To exercise the genuine "all rows had NULL hashes before migration"
+      // scenario, we need NULL rows at the START of the seq order — not
+      // appended after hashed rows (which would now correctly trip the
+      // backfill's structural inconsistency check). TRUNCATE...RESTART
+      // IDENTITY rewinds the BIGSERIAL so our inserts begin at seq=1, exactly
+      // matching the post-migration legacy state.
+      //
+      // Other tests in the suite that read activity_log only check response
+      // shape (api.spec.ts:271 asserts typeof body.total === "number"), so
+      // resetting the table is safe regardless of test ordering.
+      await pool.query("TRUNCATE TABLE activity_log RESTART IDENTITY");
+
+      // ── Seed: 3 NULL-hash legacy rows (now at seq=1,2,3) ─────────────────
       // Disable the deferred NOT-NULL trigger for this insert. Requires the
       // connection user to be the table owner (true on Replit-managed PG).
       try {
@@ -116,7 +134,8 @@ test.describe("audit-log backfill", () => {
 
       // ── Verify the legacy state was actually inserted ─────────────────────
       const beforeStatus = await fetchChainStatus(request);
-      expect(beforeStatus.total).toBeGreaterThanOrEqual(3);
+      expect(beforeStatus.total).toBe(3);
+      expect(beforeStatus.hashableEntries).toBe(0);
 
       // ── Run backfill (dry-run first to verify it reports the rewrite) ─────
       const dry = await backfillAuditLogHashes({ dryRun: true });
@@ -184,6 +203,79 @@ test.describe("audit-log backfill", () => {
           [insertedIds],
         );
       }
+      await pool.end();
+    }
+  });
+
+  test("backfill aborts when a NULL-hash row appears AFTER a hashed row (tamper signal)", async () => {
+    test.skip(!adminKey, "ADMIN_API_KEY not set");
+    test.skip(!process.env.DATABASE_URL, "DATABASE_URL not set");
+
+    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+    const seedId = `${TEST_ROW_PREFIX}inconsistency-seed-${Date.now()}`;
+    const nullId = `${TEST_ROW_PREFIX}inconsistency-null-${Date.now()}`;
+    const insertedIds = [seedId, nullId];
+
+    try {
+      // Reset to a known empty state — the previous test's cleanup may have
+      // left activity_log empty or with leftovers; either way we need a
+      // deterministic "one hashed row, then one NULL row" shape.
+      await pool.query("TRUNCATE TABLE activity_log RESTART IDENTITY");
+
+      try {
+        await pool.query("ALTER TABLE activity_log DISABLE TRIGGER trg_activity_log_hash_not_null");
+      } catch (err) {
+        test.skip(true, `Cannot disable trigger: ${(err as Error).message}`);
+      }
+      try {
+        // 1. Seed a NULL-hash row at seq=1, then run backfill so it becomes
+        //    hashed. Now activity_log has exactly one hashed row.
+        await pool.query(
+          `INSERT INTO activity_log (id, type, interaction_id, summary, log_hash, prev_log_hash)
+           VALUES ($1, 'created', $2, $3, NULL, NULL)`,
+          [seedId, "e2e-incons-seed", "seed for inconsistency check"],
+        );
+      } finally {
+        await pool.query("ALTER TABLE activity_log ENABLE TRIGGER trg_activity_log_hash_not_null");
+      }
+
+      const seedFill = await backfillAuditLogHashes({ dryRun: false });
+      expect(seedFill.applied).toBe(true);
+
+      // 2. Now inject a NULL-hash row at seq=2 — strictly AFTER the hashed
+      //    row at seq=1. This is the structural anomaly the backfill must
+      //    refuse to silently rewrite.
+      try {
+        await pool.query("ALTER TABLE activity_log DISABLE TRIGGER trg_activity_log_hash_not_null");
+      } catch (err) {
+        test.skip(true, `Cannot disable trigger: ${(err as Error).message}`);
+      }
+      try {
+        await pool.query(
+          `INSERT INTO activity_log (id, type, interaction_id, summary, log_hash, prev_log_hash)
+           VALUES ($1, 'created', $2, $3, NULL, NULL)`,
+          [nullId, "e2e-incons-null", "post-chain NULL injection"],
+        );
+      } finally {
+        await pool.query("ALTER TABLE activity_log ENABLE TRIGGER trg_activity_log_hash_not_null");
+      }
+
+      // 3. Backfill (even dry-run) must throw the structured inconsistency
+      //    error rather than silently re-hash the suspicious row.
+      let caught: unknown = null;
+      try {
+        await backfillAuditLogHashes({ dryRun: true });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught, "backfill must abort on post-chain NULL row").toBeInstanceOf(
+        AuditLogChainInconsistencyError,
+      );
+    } finally {
+      await pool.query(
+        `DELETE FROM activity_log WHERE id = ANY($1::text[])`,
+        [insertedIds],
+      );
       await pool.end();
     }
   });

@@ -15,4 +15,8 @@ export const db = drizzle(pool, { schema });
 
 export * from "./schema";
 export { sha256, buildLogHash } from "./audit-crypto";
-export { backfillAuditLogHashes, type BackfillSummary } from "./audit-log-backfill";
+export {
+  backfillAuditLogHashes,
+  AuditLogChainInconsistencyError,
+  type BackfillSummary,
+} from "./audit-log-backfill";

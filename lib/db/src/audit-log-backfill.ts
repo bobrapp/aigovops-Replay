@@ -50,6 +50,17 @@ export interface BackfillSummary {
   totalRows: number;
   /** Rows whose log_hash was NULL before the backfill ran. */
   nullHashRows: number;
+  /** Lowest seq among NULL-hash rows (null if there are none). */
+  nullMinSeq: string | null;
+  /** Highest seq among NULL-hash rows (null if there are none). */
+  nullMaxSeq: string | null;
+  /**
+   * Current legacy_cutoff baked into the activity_log_hash_not_null_check
+   * trigger function. Rows with seq <= this value are exempt from the
+   * deferred NOT-NULL check. After a successful (non-dryRun) backfill this
+   * is pinned to 0 so every row going forward is covered.
+   */
+  legacyCutoff: string;
   /** Rows whose stored hash columns differ from the recomputed canonical chain. */
   rowsThatWillChange: number;
   /** Lowest seq among rows that need rewriting (null if none). */
@@ -60,6 +71,28 @@ export interface BackfillSummary {
   dryRun: boolean;
   /** True when writes were applied (always false for dryRun). */
   applied: boolean;
+}
+
+/**
+ * Raised when the table contains an unrecoverable structural anomaly that the
+ * backfill refuses to "paper over" — currently only the case where a NULL
+ * log_hash row appears AFTER any non-NULL log_hash row in seq order. This
+ * pattern can only arise from a delete-and-reinsert attack or out-of-band
+ * row manipulation; it must be investigated by an operator before backfill
+ * is allowed to proceed (otherwise the backfill would silently mask the
+ * tamper evidence by hashing the inserted row in line with its neighbors).
+ */
+export class AuditLogChainInconsistencyError extends Error {
+  constructor(
+    public readonly nullSeqAfterNonNull: string,
+    public readonly previousNonNullSeq: string,
+  ) {
+    super(
+      `activity_log integrity violation: row seq=${nullSeqAfterNonNull} has NULL log_hash but a hashed row exists at seq=${previousNonNullSeq}. ` +
+        `This indicates out-of-band row manipulation. Investigate before re-running the backfill.`,
+    );
+    this.name = "AuditLogChainInconsistencyError";
+  }
 }
 
 interface ActivityLogRow {
@@ -97,7 +130,31 @@ export async function backfillAuditLogHashes(opts: { dryRun: boolean }): Promise
        ORDER BY seq ASC`,
     );
 
-    const nullHashRows = rows.reduce((n, r) => n + (r.log_hash === null ? 1 : 0), 0);
+    // Pre-scan: collect NULL-hash stats and detect the structural anomaly
+    // where a NULL row appears AFTER a non-NULL row in seq order. The latter
+    // can only mean out-of-band tampering and must abort the backfill BEFORE
+    // any writes — otherwise we would silently re-hash the suspicious row
+    // and bury the evidence.
+    let nullHashRows = 0;
+    let nullMinSeq: string | null = null;
+    let nullMaxSeq: string | null = null;
+    let lastNonNullSeq: string | null = null;
+    for (const row of rows) {
+      if (row.log_hash === null) {
+        nullHashRows++;
+        if (nullMinSeq === null) nullMinSeq = row.seq;
+        nullMaxSeq = row.seq;
+        if (lastNonNullSeq !== null) {
+          throw new AuditLogChainInconsistencyError(row.seq, lastNonNullSeq);
+        }
+      } else {
+        lastNonNullSeq = row.seq;
+      }
+    }
+
+    // Read the current legacy_cutoff from the trigger function source so we
+    // can surface it to operators in the dry-run report.
+    const legacyCutoff = await readLegacyCutoff(client);
 
     // Walk the table in seq order and compute the canonical chain.
     // Any row whose stored columns differ from the recomputed values is queued
@@ -126,6 +183,9 @@ export async function backfillAuditLogHashes(opts: { dryRun: boolean }): Promise
     const summary: BackfillSummary = {
       totalRows: rows.length,
       nullHashRows,
+      nullMinSeq,
+      nullMaxSeq,
+      legacyCutoff,
       rowsThatWillChange: updates.length,
       firstChangedSeq: updates[0]?.seq ?? null,
       lastChangedSeq: updates[updates.length - 1]?.seq ?? null,
@@ -174,7 +234,7 @@ export async function backfillAuditLogHashes(opts: { dryRun: boolean }): Promise
 
     await client.query("COMMIT");
     inTransaction = false;
-    return { ...summary, applied: true };
+    return { ...summary, legacyCutoff: "0", applied: true };
   } catch (err) {
     if (inTransaction) {
       try {
@@ -187,4 +247,26 @@ export async function backfillAuditLogHashes(opts: { dryRun: boolean }): Promise
   } finally {
     client.release();
   }
+}
+
+/**
+ * Read the literal cutoff value embedded in the
+ * activity_log_hash_not_null_check trigger function source. The migration
+ * embeds it via `format(%s)`, so the source contains a line like
+ * `IF NEW.log_hash IS NULL AND NEW.seq > 42 THEN`. We parse out the integer.
+ *
+ * Returns "unknown" if the function does not exist (extremely defensive — the
+ * migration always creates it). Returns "0" after a successful backfill.
+ */
+async function readLegacyCutoff(client: PoolClient): Promise<string> {
+  const { rows } = await client.query<{ src: string | null }>(
+    `SELECT pg_get_functiondef(oid) AS src
+       FROM pg_proc
+      WHERE proname = 'activity_log_hash_not_null_check'
+      LIMIT 1`,
+  );
+  const src = rows[0]?.src;
+  if (!src) return "unknown";
+  const match = src.match(/NEW\.seq\s*>\s*(\d+)/);
+  return match ? match[1] : "unknown";
 }
