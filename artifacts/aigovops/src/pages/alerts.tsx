@@ -553,7 +553,7 @@ export default function AlertsPage() {
           <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
             <li>When a receipt is minted and one or more policy rules fail, a POST is sent to each enabled endpoint.</li>
             <li>The JSON payload includes <code className="bg-muted px-1 rounded text-[10px]">event</code>, <code className="bg-muted px-1 rounded text-[10px]">receiptId</code>, <code className="bg-muted px-1 rounded text-[10px]">violations</code>, <code className="bg-muted px-1 rounded text-[10px]">summary</code>, and <code className="bg-muted px-1 rounded text-[10px]">timestamp</code>.</li>
-            <li>Failed deliveries are retried up to 3 times with exponential backoff (5 s → 25 s → 125 s).</li>
+            <li>Failed deliveries are retried up to 3 times (5 s → 25 s → 125 s backoff), then permanently failed.</li>
             <li>If an HMAC secret is configured, each delivery is signed via <code className="bg-muted px-1 rounded text-[10px]">X-AIGovOps-Signature: sha256=…</code></li>
             <li>Use the "Test" button to send a synthetic event without minting a real receipt.</li>
           </ul>

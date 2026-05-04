@@ -5,32 +5,37 @@
  *   - startWebhookWorker() registers a setInterval that polls webhook_deliveries
  *     every WEBHOOK_POLL_INTERVAL_MS for pending rows with elapsed retry timers.
  *   - Each pending delivery: load endpoint config → sign payload → POST → update status.
- *   - Max MAX_WEBHOOK_ATTEMPTS (3) with exponential backoff: 5 s → 25 s → 125 s.
+ *   - MAX_WEBHOOK_ATTEMPTS = 4: 1 initial attempt + up to 3 retries with exponential
+ *     backoff: retry 1 after 5 s, retry 2 after 25 s, retry 3 after 125 s, then fail.
+ *   - Concurrent duplicate prevention: processPendingDeliveries() uses
+ *     SELECT ... FOR UPDATE SKIP LOCKED inside a transaction to atomically claim rows
+ *     and advance their nextRetryAt past a claim window before releasing the lock.
+ *     A concurrent poll will skip locked rows entirely, preventing double-sends.
  *   - If the endpoint is disabled or deleted, the delivery is immediately failed.
  *
  * SSRF protection (exported so webhooks.ts can reuse at creation/update time):
  *   - Only http: and https: schemes are allowed.
  *   - Private RFC-1918, loopback, and link-local ranges are blocked by hostname pattern.
- *   - The resolved IP address is additionally checked via DNS lookup to prevent
- *     DNS rebinding attacks (public hostname → private IP).
+ *   - All resolved A and AAAA addresses are checked via dns.lookup(..., { all: true })
+ *     to prevent DNS rebinding attacks. Creation/update/test paths are fail-closed;
+ *     the delivery worker is fail-open so transient DNS outages don't strand retries.
  *   - Fetches are wrapped with a 10-second AbortController timeout.
  *
- * Email alerts (optional):
- *   - Activated only when SMTP_HOST env var is set.
- *   - Only fires for critical-severity violations on endpoints with emailAlerts=1.
- *   - Recipient address falls back to ALERT_EMAIL env var until per-endpoint
- *     email fields are added (see follow-up task #45).
+ * Email alerts:
+ *   - The emailAlerts field is stored in the DB and exposed through the API.
+ *   - Actual email delivery is pending task #45, which adds a per-endpoint recipient
+ *     address. No emails are sent in the current implementation.
  */
 
 import { createHmac } from "node:crypto";
 import { promises as dns } from "node:dns";
 import nodemailer from "nodemailer";
 import { db, webhookEndpointsTable, webhookDeliveriesTable } from "@workspace/db";
-import { eq, and, lte, or, isNull } from "drizzle-orm";
+import { eq, and, lte, or, isNull, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { generateId } from "./id";
 
-const MAX_WEBHOOK_ATTEMPTS = 3;
+const MAX_WEBHOOK_ATTEMPTS = 4; // 1 initial + 3 retries (uses all three backoff delays)
 const WEBHOOK_POLL_INTERVAL_MS = Number(process.env["WEBHOOK_POLL_INTERVAL_MS"] ?? 5_000);
 const WEBHOOK_FETCH_TIMEOUT_MS = 10_000;
 
@@ -347,18 +352,33 @@ async function processDelivery(deliveryId: string): Promise<void> {
 
 async function processPendingDeliveries(): Promise<void> {
   const now = new Date();
-  const pending = await db
-    .select({ id: webhookDeliveriesTable.id })
-    .from(webhookDeliveriesTable)
-    .where(
-      and(
-        eq(webhookDeliveriesTable.status, "pending"),
-        or(isNull(webhookDeliveriesTable.nextRetryAt), lte(webhookDeliveriesTable.nextRetryAt, now)),
-      ),
-    )
-    .limit(50);
+  // Claim window: if the process crashes before updating the final status, the
+  // delivery becomes eligible for reprocessing once this window expires.
+  const claimUntil = new Date(now.getTime() + 30_000);
 
-  for (const { id } of pending) {
+  // Atomically claim pending deliveries using FOR UPDATE SKIP LOCKED.
+  // Rows being processed by a concurrent worker poll are skipped, preventing
+  // the same delivery from being POSTed to the endpoint more than once.
+  const claimedIds = await db.transaction(async (tx) => {
+    const result = await tx.execute(
+      sql`SELECT id FROM webhook_deliveries
+          WHERE status = 'pending'
+            AND (next_retry_at IS NULL OR next_retry_at <= ${now})
+          LIMIT 50
+          FOR UPDATE SKIP LOCKED`,
+    );
+    const ids = (result.rows as { id: string }[]).map((r) => r.id);
+    if (ids.length === 0) return [];
+    // Advance nextRetryAt past the claim window so concurrent polls skip these rows
+    // until the current batch finishes and sets the correct backoff or final status.
+    await tx
+      .update(webhookDeliveriesTable)
+      .set({ nextRetryAt: claimUntil })
+      .where(inArray(webhookDeliveriesTable.id, ids));
+    return ids;
+  });
+
+  for (const id of claimedIds) {
     try {
       await processDelivery(id);
     } catch (err) {

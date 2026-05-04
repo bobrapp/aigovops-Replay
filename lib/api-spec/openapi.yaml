@@ -1501,8 +1501,10 @@ components:
         emailAlerts:
           type: boolean
           description: >
-            When true (and SMTP is configured server-side), the user receives an
-            email for critical-severity violations.
+            Stored preference for email alerts on critical violations. Email
+            delivery is not yet active — it is pending per-endpoint recipient
+            address support (task #45). The field is accepted and stored so
+            integrations can persist the preference ahead of that release.
         policyIds:
           type: array
           items:
