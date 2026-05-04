@@ -20,9 +20,20 @@ let oidcConfig: client.Configuration | null = null;
 
 export async function getOidcConfig(): Promise<client.Configuration> {
   if (!oidcConfig) {
+    const issuerUrl = new URL(ISSUER_URL);
+    // openid-client v6 (via oauth4webapi) rejects plain HTTP by default.
+    // Allow it when the issuer is a loopback HTTP address (test/dev only).
+    const allowHttp =
+      issuerUrl.protocol === "http:" &&
+      (issuerUrl.hostname === "localhost" ||
+        issuerUrl.hostname === "127.0.0.1" ||
+        issuerUrl.hostname === "::1");
     oidcConfig = await client.discovery(
-      new URL(ISSUER_URL),
+      issuerUrl,
       process.env.REPL_ID!,
+      undefined,
+      undefined,
+      allowHttp ? { execute: [client.allowInsecureRequests] } : undefined,
     );
   }
   return oidcConfig;

@@ -1,24 +1,31 @@
 /**
  * check-spec-drift.ts
  *
- * Two-stage OpenAPI drift checker for the AIGovOps REPLAY API:
+ * Three-stage OpenAPI drift checker for the AIGovOps REPLAY API.
  *
  * Stage 1 — Route drift
  *   Compares the Express routes registered in artifacts/api-server/src/routes/
  *   against the paths declared in lib/api-spec/openapi.yaml.  Any path+method
  *   that appears in one place but not the other is a drift violation.
  *
- * Stage 2 — Schema drift
- *   Verifies that lib/api-zod (generated from openapi.yaml by orval) is in sync
- *   with the spec for every operation that declares a requestBody or a 2xx
- *   response schema.  The check works by:
- *     a) Reading every operation's operationId from the spec.
- *     b) Deriving the expected Zod export name (PascalCase(operationId) + suffix).
- *     c) Asserting that name is exported from lib/api-zod/src/generated/api.ts.
- *   A missing export means `pnpm --filter @workspace/api-spec run codegen` has
- *   not been run after the spec was updated.
+ * Stage 2 — Schema export drift
+ *   Verifies that lib/api-zod (generated from openapi.yaml by orval) is in
+ *   sync with the spec for every operation that declares a requestBody or a 2xx
+ *   JSON response.  The check asserts that the expected Zod export name exists
+ *   in lib/api-zod/src/generated/api.ts:
+ *     • requestBody  → {PascalCase(operationId)}Body   (all methods)
+ *     • 2xx response → {PascalCase(operationId)}Response (GET only; POST/PATCH
+ *       responses are deduplicated by orval when they share a component schema
+ *       with an existing GET — their type is inlined rather than re-exported)
  *
- * Exits 0 if both stages pass, exits 1 if any drift is found.
+ * Stage 3 — Schema shape validation
+ *   For each component schema in openapi.yaml whose name matches a top-level
+ *   Zod export in lib/api-zod (typically request body schemas such as
+ *   CreateInteractionBody), compares the required fields and property set
+ *   against the Zod schema to catch field additions, removals, or
+ *   required→optional changes that were made in one place but not the other.
+ *
+ * Exits 0 if all three stages pass, exits 1 if any drift is found.
  *
  * Usage:
  *   pnpm --filter @workspace/scripts run test:spec
@@ -69,6 +76,76 @@ function toPascalCase(id: string): string {
   return id.charAt(0).toUpperCase() + id.slice(1);
 }
 
+/**
+ * Parse the top-level field names and their optionality from a named
+ * `zod.object({…})` export in the source file.
+ *
+ * Handles two common orval formatting styles:
+ *   (A) `export const Foo = zod.object({`     — fields indented 2 spaces
+ *   (B) `export const Foo = zod\n  .object({` — fields indented 4 spaces
+ *
+ * Returns null if the export is not found or has no zod.object() block.
+ * Returns an empty Map for a zod.object({}) with no properties.
+ */
+function extractZodObjectFields(
+  source: string,
+  exportName: string,
+): Map<string, { optional: boolean }> | null {
+  const marker = `export const ${exportName}`;
+  const markerIdx = source.indexOf(marker);
+  if (markerIdx === -1) return null;
+
+  // Find the nearest `.object({` after the marker (works for both formats)
+  const objIdx = source.indexOf(".object({", markerIdx + marker.length);
+  if (objIdx === -1) return null;
+
+  // Walk the source to find matching closing } of the outer object literal
+  const openBrace = source.indexOf("{", objIdx);
+  if (openBrace === -1) return null;
+
+  let depth = 1;
+  let pos = openBrace + 1;
+  while (pos < source.length && depth > 0) {
+    if (source[pos] === "{") depth++;
+    else if (source[pos] === "}") depth--;
+    pos++;
+  }
+  const block = source.slice(openBrace + 1, pos - 1);
+
+  // Determine the indentation of top-level fields by finding the minimum
+  // indentation among all `fieldName: ` lines inside the block.
+  const fieldLineRegex = /^( +)([a-zA-Z_][a-zA-Z0-9_]*): /gm;
+  let minIndent = Infinity;
+  let m: RegExpExecArray | null;
+  while ((m = fieldLineRegex.exec(block)) !== null) {
+    if (m[1].length < minIndent) minIndent = m[1].length;
+  }
+  if (minIndent === Infinity) return new Map(); // empty object
+
+  // Re-scan for only the top-level field lines
+  const topLevelRegex = new RegExp(
+    `^( {${minIndent}})([a-zA-Z_][a-zA-Z0-9_]*): `,
+    "gm",
+  );
+  const fields: Array<{ name: string; start: number }> = [];
+  while ((m = topLevelRegex.exec(block)) !== null) {
+    fields.push({ name: m[2], start: m.index });
+  }
+
+  // For each field, check whether `.optional()` appears in its block
+  // (the slice of source between this field name and the next one).
+  const result = new Map<string, { optional: boolean }>();
+  for (let i = 0; i < fields.length; i++) {
+    const { name, start } = fields[i];
+    const end =
+      i < fields.length - 1 ? fields[i + 1].start : block.length;
+    const propBlock = block.slice(start, end);
+    result.set(name, { optional: propBlock.includes(".optional()") });
+  }
+
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // OpenAPI spec
 // ---------------------------------------------------------------------------
@@ -80,8 +157,19 @@ type SpecOperation = {
   responses?: Record<string, { content?: Record<string, unknown> }>;
 };
 
+type SpecSchema = { $ref?: string };
+
+type SpecComponentSchema = {
+  type?: string;
+  required?: string[];
+  properties?: Record<string, unknown>;
+};
+
 type SpecDocument = {
   paths: Record<string, Record<string, SpecOperation>>;
+  components?: {
+    schemas?: Record<string, SpecComponentSchema>;
+  };
 };
 
 const spec = YAML.parse(readFileSync(specPath, "utf8")) as SpecDocument;
@@ -132,7 +220,7 @@ for (const route of specRoutes) {
   }
 }
 
-// ── Stage 2: schema/body drift ──────────────────────────────────────────────
+// ── Stage 2: schema export drift ────────────────────────────────────────────
 // Read all export names from the api-zod generated file.  These are produced
 // by orval from openapi.yaml.  If an operation has a requestBody or a 2xx
 // response with content but its corresponding schema export is missing, the
@@ -149,11 +237,8 @@ while ((exportMatch = EXPORT_REGEX.exec(apiZodSource)) !== null) {
   exportedNames.add(exportMatch[1]);
 }
 
-// For each spec operation, derive the expected Zod schema name(s) and verify.
 const missingBodySchemas: string[] = [];
 const missingResponseSchemas: string[] = [];
-
-type SpecSchema = { $ref?: string };
 
 for (const [_path, methods] of Object.entries(spec.paths ?? {})) {
   for (const [method, operation] of Object.entries(methods)) {
@@ -209,6 +294,74 @@ for (const [_path, methods] of Object.entries(spec.paths ?? {})) {
   }
 }
 
+// ── Stage 3: schema shape validation ────────────────────────────────────────
+// For each component schema in openapi.yaml whose name exactly matches a
+// top-level Zod export in api-zod, perform a deep field-level comparison:
+//
+//   a) Every field declared in the OpenAPI schema's `properties` map must
+//      appear in the Zod schema.
+//   b) Every field in the `required` array must NOT have `.optional()` in
+//      the Zod schema (i.e. it must be a required Zod field).
+//   c) Every field absent from `required` is allowed to be optional in Zod.
+//
+// In practice this catches:
+//   • A field added to the OpenAPI spec but not re-generated in Zod.
+//   • A field flipped from required→optional (or vice versa) in one source
+//     without the corresponding change in the other.
+//   • A field renamed in the spec but still carrying the old name in Zod.
+//
+// Only component schemas whose name matches a Zod export are checked; orval
+// renames response schemas (e.g. AuthUserEnvelope → GetCurrentAuthUserResponse)
+// so those cannot be checked by name equivalence and are handled by Stage 2.
+
+const shapeViolations: string[] = [];
+let schemasChecked = 0;
+
+for (const [schemaName, schema] of Object.entries(
+  spec.components?.schemas ?? {},
+)) {
+  // Only check schemas where the component name is also a top-level Zod export
+  // (this is true for all request body schemas, e.g. CreateInteractionBody)
+  if (!exportedNames.has(schemaName)) continue;
+  if (!schema.properties) continue;
+
+  const required = new Set(schema.required ?? []);
+  const allProps = Object.keys(schema.properties);
+
+  const zodFields = extractZodObjectFields(apiZodSource, schemaName);
+  if (zodFields === null) {
+    // Export exists but has no zod.object() — treat as unverifiable, skip
+    continue;
+  }
+
+  schemasChecked++;
+
+  // (a) Every property in the spec must appear in the Zod schema
+  for (const prop of allProps) {
+    if (!zodFields.has(prop)) {
+      shapeViolations.push(
+        `${schemaName}.${prop}: property declared in OpenAPI spec but absent from Zod schema`,
+      );
+    }
+  }
+
+  // (b) Required fields must not be marked .optional() in Zod
+  for (const field of required) {
+    if (!zodFields.has(field)) {
+      // Already reported in (a); skip duplicate message
+      continue;
+    }
+    if (zodFields.get(field)!.optional) {
+      shapeViolations.push(
+        `${schemaName}.${field}: required in OpenAPI spec but declared .optional() in Zod schema`,
+      );
+    }
+  }
+
+  // (c) Fields in Zod but absent from the spec are informational — orval may
+  //     add helper fields.  Not reported as violations.
+}
+
 // ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
@@ -246,9 +399,20 @@ if (missingResponseSchemas.length > 0) {
   for (const r of missingResponseSchemas) console.error(`     ${r}`);
 }
 
+if (shapeViolations.length > 0) {
+  hasDrift = true;
+  console.error(
+    "\n❌  Schema shape mismatches between OpenAPI spec and Zod schemas:",
+  );
+  for (const v of shapeViolations) console.error(`     ${v}`);
+  console.error(
+    "    Fix: update the OpenAPI spec and/or re-run codegen so required/optional status matches.",
+  );
+}
+
 if (!hasDrift) {
   const checkedRoutes = expressRoutes.size - SPEC_EXEMPTIONS.size;
-  // Count operations checked in stage 2
+  // Count stage-2 operations checked
   let bodyOpsChecked = 0;
   let responseOpsChecked = 0;
   for (const [, methods] of Object.entries(spec.paths ?? {})) {
@@ -259,7 +423,9 @@ if (!hasDrift) {
       if (op.requestBody) bodyOpsChecked++;
       const has2xx = Object.entries(op.responses ?? {}).some(
         ([code, resp]) =>
-          code.startsWith("2") && resp.content && Object.keys(resp.content).length > 0,
+          code.startsWith("2") &&
+          resp.content &&
+          Object.keys(resp.content).length > 0,
       );
       if (has2xx) responseOpsChecked++;
     }
@@ -271,7 +437,10 @@ if (!hasDrift) {
     `    (${SPEC_EXEMPTIONS.size} intentionally-exempted internal routes excluded from check)`,
   );
   console.log(
-    `    Schema check: ${bodyOpsChecked} request body schema(s) and ${responseOpsChecked} response schema(s) verified against lib/api-zod.`,
+    `    Schema check (Stage 2): ${bodyOpsChecked} request body schema(s) and ${responseOpsChecked} response schema(s) verified against lib/api-zod.`,
+  );
+  console.log(
+    `    Shape check  (Stage 3): ${schemasChecked} component schema(s) field-compared (required/optional status, property presence).`,
   );
   process.exit(0);
 } else {
@@ -279,7 +448,8 @@ if (!hasDrift) {
     inExpressNotInSpec.length +
     inSpecNotInExpress.length +
     missingBodySchemas.length +
-    missingResponseSchemas.length;
+    missingResponseSchemas.length +
+    shapeViolations.length;
   console.error(
     `\n${total} drift(s) found. Fix lib/api-spec/openapi.yaml, the route files, or run codegen.`,
   );

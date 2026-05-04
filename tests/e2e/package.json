@@ -1,0 +1,16 @@
+{
+  "name": "@workspace/e2e-tests",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@types/node": "catalog:",
+    "jose": "^6.0.0",
+    "yaml": "^2.0.0"
+  }
+}

@@ -110,18 +110,42 @@ async function upsertUser(claims: Record<string, unknown>) {
       | null,
   };
 
-  const [user] = await db
-    .insert(usersTable)
-    .values(userData)
-    .onConflictDoUpdate({
-      target: usersTable.id,
-      set: {
-        ...userData,
-        updatedAt: new Date(),
-      },
-    })
-    .returning();
-  return user;
+  try {
+    const [user] = await db
+      .insert(usersTable)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: usersTable.id,
+        set: {
+          ...userData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return user;
+  } catch (err: unknown) {
+    // Postgres enforces ALL unique constraints at INSERT time, before the
+    // ON CONFLICT handler fires.  If a different user row already holds this
+    // email, we update that row's id (and other fields) to match the incoming
+    // OIDC identity so repeated logins with the same email always succeed.
+    const isEmailConflict =
+      typeof err === "object" &&
+      err !== null &&
+      "message" in err &&
+      typeof (err as { message: unknown }).message === "string" &&
+      (err as { message: string }).message.includes("users_email_unique");
+
+    if (isEmailConflict && userData.email) {
+      const { eq } = await import("drizzle-orm");
+      const [user] = await db
+        .update(usersTable)
+        .set({ ...userData, updatedAt: new Date() })
+        .where(eq(usersTable.email, userData.email))
+        .returning();
+      return user;
+    }
+    throw err;
+  }
 }
 
 router.get("/auth/user", (req: Request, res: Response) => {
