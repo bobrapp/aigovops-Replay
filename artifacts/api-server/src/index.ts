@@ -28,11 +28,22 @@ if (process.argv.includes("--print-routes")) {
     );
     process.exit(2);
   }
-  // The combined router is mounted at "/api" in app.ts — strip that prefix so
-  // emitted paths line up with the spec (which uses /healthz, /interactions, …).
+  // The combined router is mounted at "/api" in app.ts.  In Express 5 the
+  // mount layer's `regexp` is set to `undefined` (path-to-regexp v8 changed
+  // the storage location), so a generic walker cannot rediscover the "/api"
+  // prefix from the layer alone.  That is fine for our purposes: the OpenAPI
+  // spec also uses unprefixed paths (`/healthz`, `/interactions`, …) because
+  // its `servers.url` is "/api".  We simply emit paths as registered and
+  // strip a leading "/api" if a future mount-path encoding does surface it.
   const routes = listRoutes(rootRouter, "")
-    .filter((r) => r.path.startsWith("/api/") || r.path === "/api")
-    .map((r) => ({ method: r.method, path: r.path.replace(/^\/api/, "") || "/" }))
+    .map((r) => ({
+      method: r.method,
+      path: r.path.startsWith("/api/")
+        ? r.path.slice(4)
+        : r.path === "/api"
+          ? "/"
+          : r.path,
+    }))
     .sort((a, b) => `${a.method} ${a.path}`.localeCompare(`${b.method} ${b.path}`));
   process.stdout.write(`__ROUTES_BEGIN__\n${JSON.stringify(routes)}\n__ROUTES_END__\n`);
   process.exit(0);

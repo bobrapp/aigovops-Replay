@@ -26,7 +26,16 @@ export default defineConfig({
     {
       name: "browser",
       testMatch: /proxy-browser\.spec\.ts$/,
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        // Replit provides a Nix-installed Chromium; `playwright install` is
+        // sandbox-blocked here.  Point Playwright at the system binary when
+        // the platform exposes it, otherwise fall back to whatever Playwright
+        // can find in its own browser cache.
+        ...(process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE
+          ? { launchOptions: { executablePath: process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE } }
+          : {}),
+      },
     },
   ],
 
