@@ -143,6 +143,7 @@ interface EndpointCardProps {
     enabled: boolean;
     eventFilter: string;
     emailAlerts: boolean;
+    policyIds?: string[] | null;
     createdAt: string;
   };
   onToggle: (id: string, enabled: boolean) => void;
@@ -210,6 +211,11 @@ function EndpointCard({
         {/* Badges row */}
         <div className="flex items-center gap-2 flex-wrap">
           <FilterBadge filter={ep.eventFilter} />
+          {ep.policyIds && ep.policyIds.length > 0 && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200 font-semibold">
+              {ep.policyIds.length} specific {ep.policyIds.length === 1 ? "policy" : "policies"}
+            </span>
+          )}
           {ep.hasSecret && (
             <span className="text-[10px] px-2 py-0.5 rounded-full border bg-violet-50 text-violet-700 border-violet-200 font-semibold">
               HMAC signed
@@ -259,6 +265,7 @@ function AddEndpointForm({ onClose }: { onClose: () => void }) {
   const [secret, setSecret] = useState("");
   const [eventFilter, setEventFilter] = useState<"all" | "critical" | "high_and_critical">("all");
   const [emailAlerts, setEmailAlerts] = useState(false);
+  const [policyIdsRaw, setPolicyIdsRaw] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
   const create = useCreateWebhook({
@@ -278,12 +285,17 @@ function AddEndpointForm({ onClose }: { onClose: () => void }) {
     ev.preventDefault();
     setErr(null);
     if (!url.trim()) { setErr("URL is required."); return; }
+    const policyIds = policyIdsRaw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     create.mutate({
       data: {
         url: url.trim(),
         secret: secret.trim() || undefined,
         eventFilter,
         emailAlerts,
+        policyIds: policyIds.length > 0 ? policyIds : undefined,
       },
     });
   }
@@ -342,6 +354,23 @@ function AddEndpointForm({ onClose }: { onClose: () => void }) {
               <option value="high_and_critical">High + Critical only</option>
               <option value="critical">Critical only</option>
             </select>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-foreground block mb-1">
+              Specific policy IDs <span className="text-muted-foreground font-normal">(optional — overrides filter above)</span>
+            </label>
+            <input
+              type="text"
+              value={policyIdsRaw}
+              onChange={(e) => setPolicyIdsRaw(e.target.value)}
+              placeholder="policyId1, policyId2, ..."
+              className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring font-mono"
+              data-testid="webhook-policy-ids-input"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Comma-separated. When set, only violations against these exact policies trigger delivery, regardless of severity filter.
+            </p>
           </div>
 
           <label className="flex items-center gap-2.5 cursor-pointer group">

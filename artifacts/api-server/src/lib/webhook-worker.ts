@@ -10,16 +10,21 @@
  *
  * SSRF protection (exported so webhooks.ts can reuse at creation/update time):
  *   - Only http: and https: schemes are allowed.
- *   - Private RFC-1918, loopback, and link-local ranges are blocked.
+ *   - Private RFC-1918, loopback, and link-local ranges are blocked by hostname pattern.
+ *   - The resolved IP address is additionally checked via DNS lookup to prevent
+ *     DNS rebinding attacks (public hostname → private IP).
  *   - Fetches are wrapped with a 10-second AbortController timeout.
  *
  * Email alerts (optional):
  *   - Activated only when SMTP_HOST env var is set.
- *   - Uses nodemailer via dynamic import — gracefully skips if not installed.
  *   - Only fires for critical-severity violations on endpoints with emailAlerts=1.
+ *   - Recipient address falls back to ALERT_EMAIL env var until per-endpoint
+ *     email fields are added (see follow-up task #45).
  */
 
 import { createHmac } from "node:crypto";
+import { promises as dns } from "node:dns";
+import nodemailer from "nodemailer";
 import { db, webhookEndpointsTable, webhookDeliveriesTable } from "@workspace/db";
 import { eq, and, lte, or, isNull } from "drizzle-orm";
 import { logger } from "./logger";
@@ -38,11 +43,32 @@ const BACKOFF_DELAYS_MS = [5_000, 25_000, 125_000] as const;
 // ── SSRF guard ────────────────────────────────────────────────────────────────
 
 /**
- * Returns true if the URL should be blocked due to SSRF risk.
- * Exported so webhooks.ts can validate at endpoint creation/update time.
- * Hostname-pattern based — does not perform DNS resolution.
+ * Returns true if the given dotted-decimal or IPv6 string is a private,
+ * loopback, or link-local address that must not be reached via outbound fetch.
  */
-export function isPrivateOrUnsafeUrl(rawUrl: string): boolean {
+function isPrivateIp(ip: string): boolean {
+  const h = ip.toLowerCase();
+  if (h === "::1" || h === "0:0:0:0:0:0:0:1") return true;
+  if (/^127\./.test(h)) return true;
+  if (/^10\./.test(h)) return true;
+  if (/^192\.168\./.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
+  if (/^169\.254\./.test(h)) return true;
+  if (/^0\./.test(h)) return true;
+  if (/^fc[0-9a-f]{2}:/i.test(h) || /^fd[0-9a-f]{2}:/i.test(h)) return true;
+  return false;
+}
+
+/**
+ * Returns true if the URL should be blocked due to SSRF risk.
+ * Performs two checks:
+ *   1. Hostname-pattern check (fast, synchronous — catches literal private addresses).
+ *   2. DNS resolution check (async — catches hostnames that resolve to private IPs,
+ *      preventing DNS rebinding attacks). On DNS failure the URL is allowed through
+ *      fail-open; the delivery fetch will simply fail at the network layer.
+ * Exported so webhooks.ts can validate at endpoint creation/update/test time.
+ */
+export async function isUnsafeUrl(rawUrl: string): Promise<boolean> {
   let u: URL;
   try {
     u = new URL(rawUrl);
@@ -51,13 +77,15 @@ export function isPrivateOrUnsafeUrl(rawUrl: string): boolean {
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") return true;
   const h = u.hostname.toLowerCase();
-  if (h === "localhost" || h === "::1" || h.endsWith(".localhost")) return true;
-  if (/^127\./.test(h)) return true;
-  if (/^10\./.test(h)) return true;
-  if (/^192\.168\./.test(h)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
-  if (/^169\.254\./.test(h)) return true;
-  if (/^fc[0-9a-f]{2}:/i.test(h) || /^fd[0-9a-f]{2}:/i.test(h)) return true;
+  if (h === "localhost" || h.endsWith(".localhost")) return true;
+  if (isPrivateIp(h)) return true;
+  // DNS resolution check — detects public hostnames that resolve to private IPs
+  try {
+    const { address } = await dns.lookup(h, { family: 4 });
+    if (isPrivateIp(address)) return true;
+  } catch {
+    // DNS resolution failed — fail-open (the outbound fetch will fail naturally)
+  }
   return false;
 }
 
@@ -77,13 +105,31 @@ export function signWebhookPayload(payload: string, secret: string | null): stri
 
 // ── Payload builder ───────────────────────────────────────────────────────────
 
+const SEVERITY_RANK: Record<string, number> = {
+  critical: 4, high: 3, medium: 2, low: 1,
+};
+
+function mostSevere(
+  violations: Array<{ id: string; name: string; severity: string }>,
+): { id: string; name: string; severity: string } {
+  return violations.reduce((a, b) =>
+    (SEVERITY_RANK[b.severity] ?? 0) > (SEVERITY_RANK[a.severity] ?? 0) ? b : a,
+  );
+}
+
 /**
  * Policy violation webhook payload shape.
- * One payload per receipt (not per individual rule) to reduce alert volume.
+ *
+ * Top-level policyId/policyName/severity represent the primary (most severe)
+ * violated policy for easy filtering by simple consumers.
+ * The violations[] array provides the full set for consumers that need it.
  */
 export interface WebhookPayload {
   event: "policy.violation";
   receiptId: string;
+  policyId: string;
+  policyName: string;
+  severity: string;
   violations: Array<{ policyId: string; policyName: string; severity: string }>;
   summary: string;
   timestamp: string;
@@ -95,15 +141,19 @@ export function buildViolationPayload(params: {
   violatedPolicies: Array<{ id: string; name: string; severity: string }>;
 }): WebhookPayload {
   const { receiptId, violatedPolicies } = params;
+  const primary = mostSevere(violatedPolicies);
   const summary =
     violatedPolicies.length === 1
-      ? `Policy violation: [${violatedPolicies[0]!.severity.toUpperCase()}] ${violatedPolicies[0]!.name}`
+      ? `Policy violation: [${primary.severity.toUpperCase()}] ${primary.name}`
       : `${violatedPolicies.length} policy violations: ${violatedPolicies
           .map((v) => `[${v.severity.toUpperCase()}] ${v.name}`)
           .join(", ")}`;
   return {
     event: "policy.violation",
     receiptId,
+    policyId: primary.id,
+    policyName: primary.name,
+    severity: primary.severity,
     violations: violatedPolicies.map((v) => ({
       policyId: v.id,
       policyName: v.name,
@@ -117,12 +167,60 @@ export function buildViolationPayload(params: {
 // ── Event filter ──────────────────────────────────────────────────────────────
 
 function matchesEventFilter(
-  violations: Array<{ severity: string }>,
+  violations: Array<{ id: string; severity: string }>,
   filter: "all" | "critical" | "high_and_critical",
+  policyIds: string[] | null,
 ): boolean {
-  if (filter === "all") return violations.length > 0;
+  if (violations.length === 0) return false;
+  // Specific policy IDs take precedence over severity-based filter
+  if (policyIds && policyIds.length > 0) {
+    return violations.some((v) => policyIds.includes(v.id));
+  }
+  if (filter === "all") return true;
   if (filter === "critical") return violations.some((v) => v.severity === "critical");
   return violations.some((v) => v.severity === "high" || v.severity === "critical");
+}
+
+// ── Email alerts (optional) ───────────────────────────────────────────────────
+
+/**
+ * Optionally send an email alert for critical violations.
+ * Requires SMTP_HOST env var. Falls back to ALERT_EMAIL env var for recipient
+ * until per-endpoint email addresses are supported (see task #45).
+ */
+async function maybeSendEmailAlert(params: {
+  receiptId: string;
+  payload: WebhookPayload;
+}): Promise<void> {
+  if (!process.env["SMTP_HOST"]) return;
+  const recipient = process.env["ALERT_EMAIL"];
+  if (!recipient) return;
+  try {
+    const transporter = nodemailer.createTransport({
+      host: process.env["SMTP_HOST"],
+      port: Number(process.env["SMTP_PORT"] ?? 587),
+      secure: process.env["SMTP_SECURE"] === "true",
+      auth: process.env["SMTP_USER"]
+        ? { user: process.env["SMTP_USER"], pass: process.env["SMTP_PASS"] ?? "" }
+        : undefined,
+    });
+    await transporter.sendMail({
+      from: process.env["SMTP_FROM"] ?? "alerts@aigovops.app",
+      to: recipient,
+      subject: `AIGovOps Alert: ${params.payload.summary}`,
+      text:
+        `Receipt ID: ${params.receiptId}\n` +
+        `${params.payload.summary}\n\n` +
+        `Violations:\n` +
+        params.payload.violations
+          .map((v) => `  - [${v.severity.toUpperCase()}] ${v.policyName}`)
+          .join("\n") +
+        `\n\nTimestamp: ${params.payload.timestamp}`,
+    });
+    logger.info({ email: recipient, receiptId: params.receiptId }, "Email alert sent");
+  } catch (err) {
+    logger.warn({ err, smtpHost: process.env["SMTP_HOST"] }, "Email alert failed — check SMTP config");
+  }
 }
 
 // ── Enqueue helper ────────────────────────────────────────────────────────────
@@ -150,63 +248,36 @@ export async function enqueueWebhookDeliveries(params: {
   const payload = buildViolationPayload({ receiptId, violatedPolicies });
   const payloadStr = JSON.stringify(payload);
 
-  const rows = endpoints
-    .filter((ep) => matchesEventFilter(violatedPolicies, ep.eventFilter))
-    .map((ep) => ({
+  const hasCritical = violatedPolicies.some((v) => v.severity === "critical");
+
+  const rows = [];
+  for (const ep of endpoints) {
+    const parsedPolicyIds = ep.policyIds
+      ? (JSON.parse(ep.policyIds) as string[])
+      : null;
+
+    if (!matchesEventFilter(violatedPolicies, ep.eventFilter, parsedPolicyIds)) continue;
+
+    rows.push({
       id: generateId(),
       webhookEndpointId: ep.id,
       receiptId,
       status: "pending" as const,
       attempts: 0,
       payload: payloadStr,
-    }));
+    });
+
+    // Fire email alert for critical violations when emailAlerts is enabled
+    if (ep.emailAlerts === 1 && hasCritical) {
+      maybeSendEmailAlert({ receiptId, payload }).catch((err) => {
+        logger.warn({ err, endpointId: ep.id }, "Email alert error");
+      });
+    }
+  }
 
   if (rows.length > 0) {
     await db.insert(webhookDeliveriesTable).values(rows);
     logger.info({ receiptId, endpointCount: rows.length }, "Webhook deliveries enqueued");
-  }
-}
-
-// ── Email alerts (optional) ───────────────────────────────────────────────────
-
-/**
- * Optionally send an email alert for critical violations.
- * Activated only when SMTP_HOST env var is set.
- * Uses nodemailer via dynamic import — if not installed, logs a warning and skips.
- */
-export async function maybeSendEmailAlert(params: {
-  email: string;
-  receiptId: string;
-  payload: WebhookPayload;
-}): Promise<void> {
-  if (!process.env["SMTP_HOST"]) return;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const nm: any = await import("nodemailer");
-    const transporter = nm.createTransport({
-      host: process.env["SMTP_HOST"],
-      port: Number(process.env["SMTP_PORT"] ?? 587),
-      secure: process.env["SMTP_SECURE"] === "true",
-      auth: process.env["SMTP_USER"]
-        ? { user: process.env["SMTP_USER"], pass: process.env["SMTP_PASS"] ?? "" }
-        : undefined,
-    });
-    await transporter.sendMail({
-      from: process.env["SMTP_FROM"] ?? "alerts@aigovops.app",
-      to: params.email,
-      subject: `AIGovOps Alert: ${params.payload.summary}`,
-      text:
-        `Receipt ID: ${params.receiptId}\n` +
-        `${params.payload.summary}\n\n` +
-        `Violations:\n` +
-        params.payload.violations
-          .map((v) => `  - [${v.severity.toUpperCase()}] ${v.policyName}`)
-          .join("\n") +
-        `\n\nTimestamp: ${params.payload.timestamp}`,
-    });
-    logger.info({ email: params.email, receiptId: params.receiptId }, "Email alert sent");
-  } catch (err) {
-    logger.warn({ err, smtpHost: process.env["SMTP_HOST"] }, "Email alert failed — check SMTP config or install nodemailer");
   }
 }
 
@@ -235,7 +306,7 @@ async function processDelivery(deliveryId: string): Promise<void> {
     return;
   }
 
-  if (isPrivateOrUnsafeUrl(endpoint.url)) {
+  if (await isUnsafeUrl(endpoint.url)) {
     logger.warn({ deliveryId, url: endpoint.url }, "Webhook delivery blocked: private/unsafe URL");
     await db
       .update(webhookDeliveriesTable)

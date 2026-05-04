@@ -412,6 +412,9 @@ export interface WebhookEndpoint {
   /** When true (and SMTP is configured server-side), the user receives an email for critical-severity violations.
    */
   emailAlerts: boolean;
+  /** Optional list of specific policy IDs to match. When set and non-empty, overrides eventFilter: only violations against these specific policies trigger delivery. Pass null or omit to use severity-based eventFilter.
+   */
+  policyIds?: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -447,6 +450,12 @@ export interface CreateWebhookBody {
   /** Opt in to email alerts for critical-severity violations. Requires SMTP to be configured server-side.
    */
   emailAlerts?: boolean;
+  /**
+   * Optional list of specific policy IDs that should trigger this endpoint. When provided and non-empty, overrides eventFilter.
+
+   * @maxItems 50
+   */
+  policyIds?: string[];
 }
 
 export type UpdateWebhookBodyEventFilter =
@@ -470,6 +479,12 @@ export interface UpdateWebhookBody {
   enabled?: boolean;
   eventFilter?: UpdateWebhookBodyEventFilter;
   emailAlerts?: boolean;
+  /**
+   * Set to an array to filter by specific policy IDs, or null to clear existing policy ID filter and revert to severity-based eventFilter.
+
+   * @maxItems 50
+   */
+  policyIds?: string[] | null;
 }
 
 /**

@@ -1503,6 +1503,15 @@ components:
           description: >
             When true (and SMTP is configured server-side), the user receives an
             email for critical-severity violations.
+        policyIds:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: >
+            Optional list of specific policy IDs to match. When set and non-empty,
+            overrides eventFilter: only violations against these specific policies
+            trigger delivery. Pass null or omit to use severity-based eventFilter.
         createdAt:
           type: string
           format: date-time
@@ -1560,6 +1569,14 @@ components:
           description: >
             Opt in to email alerts for critical-severity violations.
             Requires SMTP to be configured server-side.
+        policyIds:
+          type: array
+          items:
+            type: string
+          maxItems: 50
+          description: >
+            Optional list of specific policy IDs that should trigger this endpoint.
+            When provided and non-empty, overrides eventFilter.
 
     UpdateWebhookBody:
       type: object
@@ -1579,6 +1596,15 @@ components:
           enum: [all, critical, high_and_critical]
         emailAlerts:
           type: boolean
+        policyIds:
+          type: array
+          items:
+            type: string
+          maxItems: 50
+          nullable: true
+          description: >
+            Set to an array to filter by specific policy IDs, or null to clear
+            existing policy ID filter and revert to severity-based eventFilter.
 
     WebhookTestResult:
       type: object

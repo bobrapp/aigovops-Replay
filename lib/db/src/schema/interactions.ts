@@ -181,6 +181,7 @@ export const webhookEndpointsTable = pgTable("webhook_endpoints", {
   enabled: integer("enabled").notNull().default(1),
   eventFilter: webhookEventFilterEnum("event_filter").notNull().default("all"),
   emailAlerts: integer("email_alerts").notNull().default(0),
+  policyIds: text("policy_ids"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

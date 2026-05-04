@@ -639,6 +639,12 @@ export const ListWebhooksResponse = zod.object({
           .describe(
             "When true (and SMTP is configured server-side), the user receives an email for critical-severity violations.\n",
           ),
+        policyIds: zod
+          .array(zod.string())
+          .nullish()
+          .describe(
+            "Optional list of specific policy IDs to match. When set and non-empty, overrides eventFilter: only violations against these specific policies trigger delivery. Pass null or omit to use severity-based eventFilter.\n",
+          ),
         createdAt: zod.coerce.date(),
         updatedAt: zod.coerce.date(),
       })
@@ -660,6 +666,7 @@ export const createWebhookBodySecretMax = 256;
 
 export const createWebhookBodyEventFilterDefault = `all`;
 export const createWebhookBodyEmailAlertsDefault = false;
+export const createWebhookBodyPolicyIdsMax = 50;
 
 export const CreateWebhookBody = zod.object({
   url: zod
@@ -685,6 +692,13 @@ export const CreateWebhookBody = zod.object({
     .describe(
       "Opt in to email alerts for critical-severity violations. Requires SMTP to be configured server-side.\n",
     ),
+  policyIds: zod
+    .array(zod.string())
+    .max(createWebhookBodyPolicyIdsMax)
+    .optional()
+    .describe(
+      "Optional list of specific policy IDs that should trigger this endpoint. When provided and non-empty, overrides eventFilter.\n",
+    ),
 });
 
 /**
@@ -700,6 +714,8 @@ export const updateWebhookBodyUrlMax = 2000;
 
 export const updateWebhookBodySecretMax = 256;
 
+export const updateWebhookBodyPolicyIdsMax = 50;
+
 export const UpdateWebhookBody = zod.object({
   url: zod.string().url().max(updateWebhookBodyUrlMax).optional(),
   secret: zod
@@ -710,6 +726,13 @@ export const UpdateWebhookBody = zod.object({
   enabled: zod.boolean().optional(),
   eventFilter: zod.enum(["all", "critical", "high_and_critical"]).optional(),
   emailAlerts: zod.boolean().optional(),
+  policyIds: zod
+    .array(zod.string())
+    .max(updateWebhookBodyPolicyIdsMax)
+    .nullish()
+    .describe(
+      "Set to an array to filter by specific policy IDs, or null to clear existing policy ID filter and revert to severity-based eventFilter.\n",
+    ),
 });
 
 export const UpdateWebhookResponse = zod
@@ -731,6 +754,12 @@ export const UpdateWebhookResponse = zod
       .boolean()
       .describe(
         "When true (and SMTP is configured server-side), the user receives an email for critical-severity violations.\n",
+      ),
+    policyIds: zod
+      .array(zod.string())
+      .nullish()
+      .describe(
+        "Optional list of specific policy IDs to match. When set and non-empty, overrides eventFilter: only violations against these specific policies trigger delivery. Pass null or omit to use severity-based eventFilter.\n",
       ),
     createdAt: zod.coerce.date(),
     updatedAt: zod.coerce.date(),

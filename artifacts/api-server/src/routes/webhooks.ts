@@ -5,13 +5,14 @@
  * Endpoints:
  *   GET  /webhooks                    — list user's webhook endpoints
  *   POST /webhooks                    — create a new endpoint (max 10 per user)
- *   PATCH /webhooks/:id               — update url/secret/enabled/eventFilter/emailAlerts
+ *   PATCH /webhooks/:id               — update url/secret/enabled/eventFilter/emailAlerts/policyIds
  *   DELETE /webhooks/:id              — delete endpoint + all its delivery records
  *   POST /webhooks/:id/test           — fire a synthetic test webhook to the endpoint
  *   GET  /webhooks/:id/deliveries     — list recent deliveries for an endpoint (last 50)
  *
  * Security:
- *   - SSRF: URLs are validated against isPrivateOrUnsafeUrl() at creation and update time.
+ *   - SSRF: URLs are validated against isUnsafeUrl() (async — includes DNS resolution)
+ *     at creation, update, and test time to block DNS rebinding attacks.
  *   - Ownership: every mutating route verifies endpoint.userId === req.user.id.
  *   - Secrets are never returned in responses; hasSecret:boolean is sent instead.
  *   - Max 10 endpoints per user to prevent abuse.
@@ -25,7 +26,7 @@ import { requireAuth } from "../middlewares/requireAuth";
 import { generateId } from "../lib/id";
 import { logger } from "../lib/logger";
 import {
-  isPrivateOrUnsafeUrl,
+  isUnsafeUrl,
   signWebhookPayload,
   buildViolationPayload,
 } from "../lib/webhook-worker";
@@ -34,11 +35,14 @@ const MAX_ENDPOINTS_PER_USER = 10;
 
 // ── Input validation schemas ──────────────────────────────────────────────────
 
+const PolicyIdsZ = z.array(z.string().min(1).max(200)).max(50).optional();
+
 const CreateWebhookBodyZ = z.object({
   url: z.string().url("Must be a valid URL").max(2000),
   secret: z.string().max(256).optional(),
   eventFilter: z.enum(["all", "critical", "high_and_critical"]).default("all"),
   emailAlerts: z.boolean().default(false),
+  policyIds: PolicyIdsZ,
 });
 
 const UpdateWebhookBodyZ = z.object({
@@ -47,6 +51,7 @@ const UpdateWebhookBodyZ = z.object({
   enabled: z.boolean().optional(),
   eventFilter: z.enum(["all", "critical", "high_and_critical"]).optional(),
   emailAlerts: z.boolean().optional(),
+  policyIds: z.array(z.string().min(1).max(200)).max(50).nullable().optional(),
 });
 
 const WebhookIdZ = z.object({ id: z.string().min(1).max(200) });
@@ -119,7 +124,7 @@ router.post("/webhooks", requireAuth, async (req, res) => {
     return;
   }
 
-  if (isPrivateOrUnsafeUrl(body.url)) {
+  if (await isUnsafeUrl(body.url)) {
     res.status(422).json({
       error: "URL must use http/https and must not point to private, loopback, or link-local addresses.",
     });
@@ -139,6 +144,9 @@ router.post("/webhooks", requireAuth, async (req, res) => {
   }
 
   const id = generateId();
+  const policyIdsJson =
+    body.policyIds && body.policyIds.length > 0 ? JSON.stringify(body.policyIds) : null;
+
   const [created] = await db
     .insert(webhookEndpointsTable)
     .values({
@@ -149,6 +157,7 @@ router.post("/webhooks", requireAuth, async (req, res) => {
       enabled: 1,
       eventFilter: body.eventFilter,
       emailAlerts: body.emailAlerts ? 1 : 0,
+      policyIds: policyIdsJson,
     })
     .returning();
 
@@ -184,7 +193,7 @@ router.patch("/webhooks/:id", requireAuth, async (req, res) => {
     return;
   }
 
-  if (body.url !== undefined && isPrivateOrUnsafeUrl(body.url)) {
+  if (body.url !== undefined && await isUnsafeUrl(body.url)) {
     res.status(422).json({
       error: "URL must use http/https and must not point to private, loopback, or link-local addresses.",
     });
@@ -197,6 +206,12 @@ router.patch("/webhooks/:id", requireAuth, async (req, res) => {
   if (body.enabled !== undefined) patch["enabled"] = body.enabled ? 1 : 0;
   if (body.eventFilter !== undefined) patch["eventFilter"] = body.eventFilter;
   if (body.emailAlerts !== undefined) patch["emailAlerts"] = body.emailAlerts ? 1 : 0;
+  if (body.policyIds !== undefined) {
+    patch["policyIds"] =
+      body.policyIds === null || body.policyIds.length === 0
+        ? null
+        : JSON.stringify(body.policyIds);
+  }
 
   const [updated] = await db
     .update(webhookEndpointsTable)
@@ -254,7 +269,7 @@ router.post("/webhooks/:id/test", requireAuth, async (req, res) => {
     return;
   }
 
-  if (isPrivateOrUnsafeUrl(endpoint.url)) {
+  if (await isUnsafeUrl(endpoint.url)) {
     res.json({ ok: false, statusCode: null, error: "URL is private or unsafe — delivery blocked" });
     return;
   }
@@ -306,6 +321,9 @@ router.post("/webhooks/:id/test", requireAuth, async (req, res) => {
 // ── DTO helpers ───────────────────────────────────────────────────────────────
 
 function toEndpointDto(ep: typeof webhookEndpointsTable.$inferSelect) {
+  const policyIds = ep.policyIds
+    ? (JSON.parse(ep.policyIds) as string[])
+    : null;
   return {
     id: ep.id,
     url: ep.url,
@@ -313,6 +331,7 @@ function toEndpointDto(ep: typeof webhookEndpointsTable.$inferSelect) {
     enabled: ep.enabled === 1,
     eventFilter: ep.eventFilter,
     emailAlerts: ep.emailAlerts === 1,
+    policyIds,
     createdAt: ep.createdAt.toISOString(),
     updatedAt: ep.updatedAt.toISOString(),
   };
