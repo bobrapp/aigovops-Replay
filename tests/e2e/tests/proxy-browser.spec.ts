@@ -22,14 +22,45 @@
  *      crashed AuthGate, missing chain view export) that an API-only
  *      suite cannot see.
  *
- * The running api-server / web workflows must already be up; Playwright's
- * globalSetup boots the spawned API but does NOT touch the dev workflows.
+ * Hermetic-CI guard
+ * ─────────────────
+ * Both describe blocks below depend on Replit's shared reverse-proxy at
+ * `http://localhost:80`, which only exists when the `aigovops: web` and
+ * `api-server: API Server` workflows are up — i.e. inside the Replit
+ * workspace.  In a generic CI / clean-checkout environment those workflows
+ * are not running and the proxy is unreachable.  Rather than failing the
+ * whole `pnpm run test:e2e` script in that case, each describe runs a
+ * one-off reachability probe in `beforeAll` and skips itself with a clear
+ * message when the proxy cannot be reached.  The hermetic api-server
+ * suite (`api.spec.ts`) is unaffected and always runs.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect, request as pwRequest } from "@playwright/test";
 
 const PROXY = "http://localhost:80";
 
+async function isProxyReachable(): Promise<boolean> {
+  try {
+    const ctx = await pwRequest.newContext();
+    const resp = await ctx.get(`${PROXY}/api/healthz`, { timeout: 2_000 });
+    await ctx.dispose();
+    return resp.ok();
+  } catch {
+    return false;
+  }
+}
+
 test.describe("Shared proxy — public API routing", () => {
+  test.beforeAll(async () => {
+    if (!(await isProxyReachable())) {
+      test.skip(
+        true,
+        `Replit shared proxy at ${PROXY} is not reachable — these tests require ` +
+          `the 'aigovops: web' and 'api-server: API Server' workflows to be running. ` +
+          `Hermetic API coverage is provided by api.spec.ts.`,
+      );
+    }
+  });
+
   test("GET /api/healthz via proxy → 200 { status: ok }", async ({ request }) => {
     const resp = await request.get(`${PROXY}/api/healthz`);
     expect(resp.status()).toBe(200);
@@ -51,6 +82,17 @@ test.describe("Shared proxy — public API routing", () => {
 });
 
 test.describe("Browser navigation — landing + chain view", () => {
+  test.beforeAll(async () => {
+    if (!(await isProxyReachable())) {
+      test.skip(
+        true,
+        `Replit shared proxy at ${PROXY} is not reachable — these tests require ` +
+          `the 'aigovops: web' and 'api-server: API Server' workflows to be running. ` +
+          `Hermetic API coverage is provided by api.spec.ts.`,
+      );
+    }
+  });
+
   test("Landing page renders the welcome screen", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
