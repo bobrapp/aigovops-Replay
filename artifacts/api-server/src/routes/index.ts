@@ -6,6 +6,7 @@ import auditRouter from "./audit";
 import interactionsRouter from "./interactions";
 import policiesRouter from "./policies";
 import aiRouter from "./ai";
+import demoRouter from "./demo";
 import exportRouter from "./export";
 import webhooksRouter from "./webhooks";
 const router: IRouter = Router();
@@ -17,6 +18,7 @@ router.use(auditRouter);
 router.use(interactionsRouter);
 router.use(policiesRouter);
 router.use(aiRouter);
+router.use(demoRouter);
 router.use(exportRouter);
 router.use(webhooksRouter);
 
