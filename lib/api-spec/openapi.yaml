@@ -26,6 +26,8 @@ tags:
     description: Public receipt verification and chain health
   - name: alerts
     description: Webhook endpoint configuration and delivery tracking for policy violation alerts
+  - name: demo
+    description: Public no-login demo gallery — pre-seeded receipts plus visitor-supplied "bring your own AI output" mints. No live LLM calls, no policy evaluation, no webhook side effects.
 paths:
   /auth/user:
     get:
@@ -782,6 +784,58 @@ paths:
           description: Endpoint belongs to another user
         "404":
           description: Endpoint not found
+
+  /demo/chain:
+    get:
+      tags: [demo]
+      operationId: getDemoChain
+      summary: Get the public demo chain
+      description: >
+        Returns the most recent receipts on the shared public demo chain. This
+        endpoint is anonymous — no authentication required. The chain combines
+        boot-time seeded fixtures with visitor-supplied mints from POST
+        /demo/mint. Capped at 50 most-recent rows; deep pagination is
+        intentionally not exposed.
+      security: []
+      responses:
+        "200":
+          description: Public demo chain entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoChain"
+  /demo/mint:
+    post:
+      tags: [demo]
+      operationId: createDemoMint
+      summary: Mint a demo receipt from a visitor-supplied AI prompt + response
+      description: >
+        Anonymous "bring your own AI output" mint. The visitor supplies a
+        prompt, response, and model identifier; the server returns a real
+        cryptographically chained receipt under the shared public demo user.
+
+        Hard limits: prompt ≤ 2 KiB, response ≤ 32 KiB, model ≤ 100 chars.
+        Per-IP rate limit of 3 requests per hour. No live LLM call is made,
+        no policy evaluation runs, no webhook deliveries are enqueued, and
+        no activity_log entries are written for demo mints.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DemoMintBody"
+      responses:
+        "201":
+          description: Demo receipt minted and added to the public chain.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoReceipt"
+        "400":
+          description: Invalid request body (missing field or size limit exceeded).
+        "429":
+          description: Per-IP rate limit reached (3 mints per hour).
 
 security:
   - bearerAuth: []
@@ -1670,3 +1724,101 @@ components:
             $ref: "#/components/schemas/WebhookDelivery"
       required:
         - items
+
+    DemoMintBody:
+      type: object
+      description: >
+        Visitor-supplied input for POST /demo/mint. No live LLM call is made;
+        the server simply hashes and chains the supplied content. Hard caps
+        match the body-size limits enforced in the route handler.
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: The AI prompt the visitor sent. Maximum 2 KiB.
+        response:
+          type: string
+          minLength: 1
+          maxLength: 32768
+          description: The AI response the visitor received. Maximum 32 KiB.
+        model:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Model identifier string (e.g. "gpt-4o", "claude-3-5-sonnet").
+      required:
+        - prompt
+        - response
+        - model
+
+    DemoReceipt:
+      type: object
+      description: >
+        A single receipt on the public demo chain. Same cryptographic shape as
+        an authenticated Interaction but without the userId field (every demo
+        receipt belongs to a single shared synthetic user, which is an
+        implementation detail not exposed to anonymous callers).
+      properties:
+        id:
+          type: string
+        prompt:
+          type: string
+        response:
+          type: string
+        model:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        promptHash:
+          type: string
+        responseHash:
+          type: string
+        prevHash:
+          type: string
+          nullable: true
+        chainHash:
+          type: string
+        policyStatus:
+          type: string
+          enum: [pass, fail, pending, error]
+        policyViolations:
+          type: array
+          items:
+            type: string
+          description: >
+            Frozen list of violations baked into the seeded fixture (e.g.
+            "[CRITICAL] Phishing / Social Engineering Request"). Always
+            empty for visitor-supplied mints — demo writes do not run policy
+            evaluation.
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - prompt
+        - response
+        - model
+        - tags
+        - promptHash
+        - responseHash
+        - chainHash
+        - policyStatus
+        - policyViolations
+        - createdAt
+
+    DemoChain:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DemoReceipt"
+        total:
+          type: integer
+          description: Total number of receipts on the demo chain (may exceed items.length when capped).
+      required:
+        - items
+        - total

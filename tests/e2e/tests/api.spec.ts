@@ -283,3 +283,140 @@ test.describe("Admin endpoints", () => {
     expect(typeof body.total).toBe("number");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Public demo gallery — anonymous "bring your own AI output" surface.
+//
+// These endpoints intentionally bypass the auth middleware and are reachable
+// by un-logged-in visitors. The contract is: GET /demo/chain returns the
+// shared public chain (seeded fixtures + visitor mints), and POST /demo/mint
+// chains a visitor-supplied prompt+response onto it without invoking any
+// LLM, policy evaluator, webhook delivery, or activity_log writer.
+//
+// The hermetic test API server boots with the same seeder the production
+// server runs (lib/demo-seeder.ts), so GET /demo/chain should always have
+// at least the 7 seeded fixtures available before any mint happens.
+// ---------------------------------------------------------------------------
+test.describe("Public demo gallery (anonymous)", () => {
+  test("GET /demo/chain (anonymous) → 200 with seeded fixtures", async ({ request }) => {
+    const resp = await request.get(`${BASE}/demo/chain`);
+    expect(resp.status()).toBe(200);
+    const body = await resp.json() as {
+      items: Array<{
+        id: string;
+        prompt: string;
+        response: string;
+        model: string;
+        promptHash: string;
+        responseHash: string;
+        chainHash: string;
+        prevHash: string | null;
+        policyStatus: string;
+        policyViolations: string[];
+        tags: string[];
+        createdAt: string;
+      }>;
+      total: number;
+    };
+
+    // The seeder inserts at least 6 demo fixtures at boot (currently 7 —
+    // legal/medical/finance/EU AI Act/journalism + 1 phishing-refusal).
+    // Asserting >= 6 lets us add a fixture without breaking the test, but
+    // catches a regression where the seeder silently no-ops.
+    expect(body.items.length, "seeder must produce at least 6 demo receipts").toBeGreaterThanOrEqual(6);
+    expect(body.total).toBeGreaterThanOrEqual(body.items.length);
+
+    // Every item must carry the cryptographic shape — anything missing
+    // would crash the client gallery's recompute-and-verify code path.
+    for (const item of body.items) {
+      expect(typeof item.id).toBe("string");
+      expect(typeof item.promptHash).toBe("string");
+      expect(typeof item.responseHash).toBe("string");
+      expect(typeof item.chainHash).toBe("string");
+      expect(item.chainHash.length).toBe(64); // sha256 hex
+      expect(Array.isArray(item.policyViolations)).toBe(true);
+      expect(Array.isArray(item.tags)).toBe(true);
+    }
+
+    // The phishing-refusal fixture is the only one we ship with policyStatus
+    // = "fail"; if the seeder ever loses it the demo loses its "look — the
+    // chain catches policy fails too" story. Pin its presence.
+    const failFixture = body.items.find((i) => i.policyStatus === "fail");
+    expect(failFixture, "demo chain should include at least one policy-fail fixture").toBeDefined();
+    expect(failFixture!.policyViolations.length).toBeGreaterThan(0);
+  });
+
+  test("POST /demo/mint (anonymous) → 201 with chained receipt", async ({ request }) => {
+    // Capture the chain head before mint so we can prove the new receipt
+    // links to it via prevHash. This is the actual "chain" property of the
+    // demo chain — without it the receipt would be a standalone stub.
+    const beforeResp = await request.get(`${BASE}/demo/chain`);
+    const before = await beforeResp.json() as {
+      items: Array<{ chainHash: string }>;
+    };
+    const headBefore = before.items[0]?.chainHash;
+    expect(headBefore, "demo chain must have a head before mint").toBeTruthy();
+
+    // Use a unique prompt+response so the content-addressed id is fresh
+    // (demo-seeder uses sha256(prompt+response+model+demo-public) as id and
+    // ON CONFLICT DO NOTHING, so a duplicate would silently no-op).
+    const unique = `e2e mint probe ${Date.now()}-${Math.random()}`;
+    const mintResp = await request.post(`${BASE}/demo/mint`, {
+      data: {
+        prompt: `What is the meaning of: ${unique}?`,
+        response: `It is a unique e2e probe value: ${unique}`,
+        model: "gpt-4o",
+      },
+    });
+    expect(mintResp.status()).toBe(201);
+    const minted = await mintResp.json() as {
+      id: string;
+      prompt: string;
+      response: string;
+      model: string;
+      promptHash: string;
+      responseHash: string;
+      chainHash: string;
+      prevHash: string | null;
+      policyStatus: string;
+      policyViolations: string[];
+      tags: string[];
+    };
+
+    // Cryptographic shape — sha256 hex everywhere.
+    expect(minted.chainHash.length).toBe(64);
+    expect(minted.promptHash.length).toBe(64);
+    expect(minted.responseHash.length).toBe(64);
+
+    // Demo mints must NOT run policy evaluation — policyStatus stays
+    // "pending" and violations stay empty regardless of content.  This is
+    // the contract that lets visitors mint anything without triggering the
+    // webhook / activity_log / violation-counter side effects.
+    expect(minted.policyStatus).toBe("pending");
+    expect(minted.policyViolations).toEqual([]);
+    expect(minted.tags).toEqual(expect.arrayContaining(["demo", "byoai"]));
+
+    // Chain link assertion: prevHash must equal the previous chain head.
+    expect(minted.prevHash).toBe(headBefore);
+
+    // GET /demo/chain should now show the new receipt at position 0
+    // (most-recent-first ordering).
+    const afterResp = await request.get(`${BASE}/demo/chain`);
+    const after = await afterResp.json() as {
+      items: Array<{ id: string; chainHash: string }>;
+    };
+    expect(after.items[0].id).toBe(minted.id);
+    expect(after.items[0].chainHash).toBe(minted.chainHash);
+  });
+
+  test("POST /demo/mint rejects oversize prompt with 400", async ({ request }) => {
+    // Cap is 2 KiB (2048 chars). A 3 KiB prompt must be refused — letting
+    // it through would let an anonymous visitor write arbitrarily large
+    // rows into the public demo chain.
+    const huge = "x".repeat(3 * 1024);
+    const resp = await request.post(`${BASE}/demo/mint`, {
+      data: { prompt: huge, response: "ok", model: "gpt-4o" },
+    });
+    expect(resp.status()).toBe(400);
+  });
+});

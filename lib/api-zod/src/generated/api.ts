@@ -637,7 +637,7 @@ export const ListWebhooksResponse = zod.object({
         emailAlerts: zod
           .boolean()
           .describe(
-            "When true (and SMTP is configured server-side), the user receives an email for critical-severity violations.\n",
+            "Stored preference for email alerts on critical violations. Email delivery is not yet active — it is pending per-endpoint recipient address support (task #45). The field is accepted and stored so integrations can persist the preference ahead of that release.\n",
           ),
         policyIds: zod
           .array(zod.string())
@@ -753,7 +753,7 @@ export const UpdateWebhookResponse = zod
     emailAlerts: zod
       .boolean()
       .describe(
-        "When true (and SMTP is configured server-side), the user receives an email for critical-severity violations.\n",
+        "Stored preference for email alerts on critical violations. Email delivery is not yet active — it is pending per-endpoint recipient address support (task #45). The field is accepted and stored so integrations can persist the preference ahead of that release.\n",
       ),
     policyIds: zod
       .array(zod.string())
@@ -834,3 +834,76 @@ export const ListWebhookDeliveriesResponse = zod.object({
       .describe("A single webhook delivery attempt record."),
   ),
 });
+
+/**
+ * Returns the most recent receipts on the shared public demo chain. This endpoint is anonymous — no authentication required. The chain combines boot-time seeded fixtures with visitor-supplied mints from POST /demo/mint. Capped at 50 most-recent rows; deep pagination is intentionally not exposed.
+
+ * @summary Get the public demo chain
+ */
+export const GetDemoChainResponse = zod.object({
+  items: zod.array(
+    zod
+      .object({
+        id: zod.string(),
+        prompt: zod.string(),
+        response: zod.string(),
+        model: zod.string(),
+        tags: zod.array(zod.string()),
+        promptHash: zod.string(),
+        responseHash: zod.string(),
+        prevHash: zod.string().nullish(),
+        chainHash: zod.string(),
+        policyStatus: zod.enum(["pass", "fail", "pending", "error"]),
+        policyViolations: zod
+          .array(zod.string())
+          .describe(
+            'Frozen list of violations baked into the seeded fixture (e.g. \"[CRITICAL] Phishing \/ Social Engineering Request\"). Always empty for visitor-supplied mints — demo writes do not run policy evaluation.\n',
+          ),
+        createdAt: zod.coerce.date(),
+      })
+      .describe(
+        "A single receipt on the public demo chain. Same cryptographic shape as an authenticated Interaction but without the userId field (every demo receipt belongs to a single shared synthetic user, which is an implementation detail not exposed to anonymous callers).\n",
+      ),
+  ),
+  total: zod
+    .number()
+    .describe(
+      "Total number of receipts on the demo chain (may exceed items.length when capped).",
+    ),
+});
+
+/**
+ * Anonymous "bring your own AI output" mint. The visitor supplies a prompt, response, and model identifier; the server returns a real cryptographically chained receipt under the shared public demo user.
+Hard limits: prompt ≤ 2 KiB, response ≤ 32 KiB, model ≤ 100 chars. Per-IP rate limit of 3 requests per hour. No live LLM call is made, no policy evaluation runs, no webhook deliveries are enqueued, and no activity_log entries are written for demo mints.
+
+ * @summary Mint a demo receipt from a visitor-supplied AI prompt + response
+ */
+export const createDemoMintBodyPromptMax = 2048;
+
+export const createDemoMintBodyResponseMax = 32768;
+
+export const createDemoMintBodyModelMax = 100;
+
+export const CreateDemoMintBody = zod
+  .object({
+    prompt: zod
+      .string()
+      .min(1)
+      .max(createDemoMintBodyPromptMax)
+      .describe("The AI prompt the visitor sent. Maximum 2 KiB."),
+    response: zod
+      .string()
+      .min(1)
+      .max(createDemoMintBodyResponseMax)
+      .describe("The AI response the visitor received. Maximum 32 KiB."),
+    model: zod
+      .string()
+      .min(1)
+      .max(createDemoMintBodyModelMax)
+      .describe(
+        'Model identifier string (e.g. \"gpt-4o\", \"claude-3-5-sonnet\").',
+      ),
+  })
+  .describe(
+    "Visitor-supplied input for POST \/demo\/mint. No live LLM call is made; the server simply hashes and chains the supplied content. Hard caps match the body-size limits enforced in the route handler.\n",
+  );

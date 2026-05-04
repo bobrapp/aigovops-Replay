@@ -27,6 +27,9 @@ import type {
   CreatePolicyBody,
   CreateShareTokenBody,
   CreateWebhookBody,
+  DemoChain,
+  DemoMintBody,
+  DemoReceipt,
   ErrorEnvelope,
   GetPublicVerificationParams,
   HandleBrowserLoginCallbackParams,
@@ -2768,3 +2771,169 @@ export function useListWebhookDeliveries<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Returns the most recent receipts on the shared public demo chain. This endpoint is anonymous — no authentication required. The chain combines boot-time seeded fixtures with visitor-supplied mints from POST /demo/mint. Capped at 50 most-recent rows; deep pagination is intentionally not exposed.
+
+ * @summary Get the public demo chain
+ */
+export const getGetDemoChainUrl = () => {
+  return `/api/demo/chain`;
+};
+
+export const getDemoChain = async (
+  options?: RequestInit,
+): Promise<DemoChain> => {
+  return customFetch<DemoChain>(getGetDemoChainUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDemoChainQueryKey = () => {
+  return [`/api/demo/chain`] as const;
+};
+
+export const getGetDemoChainQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDemoChain>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDemoChain>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDemoChainQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDemoChain>>> = ({
+    signal,
+  }) => getDemoChain({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDemoChain>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDemoChainQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDemoChain>>
+>;
+export type GetDemoChainQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the public demo chain
+ */
+
+export function useGetDemoChain<
+  TData = Awaited<ReturnType<typeof getDemoChain>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDemoChain>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDemoChainQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Anonymous "bring your own AI output" mint. The visitor supplies a prompt, response, and model identifier; the server returns a real cryptographically chained receipt under the shared public demo user.
+Hard limits: prompt ≤ 2 KiB, response ≤ 32 KiB, model ≤ 100 chars. Per-IP rate limit of 3 requests per hour. No live LLM call is made, no policy evaluation runs, no webhook deliveries are enqueued, and no activity_log entries are written for demo mints.
+
+ * @summary Mint a demo receipt from a visitor-supplied AI prompt + response
+ */
+export const getCreateDemoMintUrl = () => {
+  return `/api/demo/mint`;
+};
+
+export const createDemoMint = async (
+  demoMintBody: DemoMintBody,
+  options?: RequestInit,
+): Promise<DemoReceipt> => {
+  return customFetch<DemoReceipt>(getCreateDemoMintUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(demoMintBody),
+  });
+};
+
+export const getCreateDemoMintMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDemoMint>>,
+    TError,
+    { data: BodyType<DemoMintBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createDemoMint>>,
+  TError,
+  { data: BodyType<DemoMintBody> },
+  TContext
+> => {
+  const mutationKey = ["createDemoMint"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createDemoMint>>,
+    { data: BodyType<DemoMintBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createDemoMint(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateDemoMintMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createDemoMint>>
+>;
+export type CreateDemoMintMutationBody = BodyType<DemoMintBody>;
+export type CreateDemoMintMutationError = ErrorType<void>;
+
+/**
+ * @summary Mint a demo receipt from a visitor-supplied AI prompt + response
+ */
+export const useCreateDemoMint = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDemoMint>>,
+    TError,
+    { data: BodyType<DemoMintBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createDemoMint>>,
+  TError,
+  { data: BodyType<DemoMintBody> },
+  TContext
+> => {
+  return useMutation(getCreateDemoMintMutationOptions(options));
+};

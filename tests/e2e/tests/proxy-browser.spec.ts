@@ -128,4 +128,58 @@ test.describe("Browser navigation — landing + chain view", () => {
       .toBeVisible({ timeout: 10_000 });
     expect(errors, `unexpected page errors: ${errors.join(" | ")}`).toHaveLength(0);
   });
+
+  test("Landing page shows the anonymous demo gallery (no login required)", async ({ page }) => {
+    // The whole point of the demo gallery is that it renders BEFORE any
+    // auth gate or guest-mode opt-in — a brand-new visitor must see real
+    // demo receipts the moment the landing page loads. If a regression
+    // moves the gallery behind AuthGate, this test fails.
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+
+    const resp = await page.goto(`${PROXY}/`, { waitUntil: "domcontentloaded" });
+    expect(resp?.status(), "landing page should load via proxy").toBeLessThan(400);
+
+    // The gallery section header is always rendered, even before the
+    // /api/demo/chain query resolves (so this works regardless of network
+    // timing in CI).
+    await expect(page.getByTestId("label-demo-gallery"))
+      .toBeVisible({ timeout: 10_000 });
+
+    // Wait for the first demo card to render (the seeder ships >= 6
+    // fixtures at boot, so the gallery should never be empty in practice).
+    await expect(page.getByTestId("demo-card").first())
+      .toBeVisible({ timeout: 15_000 });
+
+    // BYOAI mint form must be visible too — gallery without form would be
+    // a regression that defeats the "minimum-friction trust ladder" goal.
+    await expect(page.getByTestId("byoai-form"))
+      .toBeVisible({ timeout: 10_000 });
+
+    expect(errors, `unexpected page errors: ${errors.join(" | ")}`).toHaveLength(0);
+  });
+
+  test("Public /demo-chain page renders without sign-in", async ({ page }) => {
+    // The full-page demo chain view is mounted as a public route alongside
+    // /verify/:id, before AuthGate. An anonymous visitor must be able to
+    // load it directly — that's the URL the BYOAI mint result links to.
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+
+    const resp = await page.goto(`${PROXY}/demo-chain`, { waitUntil: "domcontentloaded" });
+    expect(resp?.status(), "/demo-chain should load via proxy").toBeLessThan(400);
+
+    // The page header pins the route's identity — if AuthGate swallows it,
+    // we'd see the WelcomeScreen brand wordmark instead.
+    await expect(page.locator("h1").filter({ hasText: /public demo chain/i }).first())
+      .toBeVisible({ timeout: 10_000 });
+
+    // Both the gallery and the mint form must be present on this page.
+    await expect(page.getByTestId("demo-card").first())
+      .toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("byoai-form"))
+      .toBeVisible({ timeout: 10_000 });
+
+    expect(errors, `unexpected page errors: ${errors.join(" | ")}`).toHaveLength(0);
+  });
 });

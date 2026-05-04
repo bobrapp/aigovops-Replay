@@ -409,7 +409,7 @@ export interface WebhookEndpoint {
   /** Controls which violation severities trigger a delivery. all = any violation, critical = critical severity only, high_and_critical = high or critical severity.
    */
   eventFilter: WebhookEndpointEventFilter;
-  /** When true (and SMTP is configured server-side), the user receives an email for critical-severity violations.
+  /** Stored preference for email alerts on critical violations. Email delivery is not yet active — it is pending per-endpoint recipient address support (task #45). The field is accepted and stored so integrations can persist the preference ahead of that release.
    */
   emailAlerts: boolean;
   /** Optional list of specific policy IDs to match. When set and non-empty, overrides eventFilter: only violations against these specific policies trigger delivery. Pass null or omit to use severity-based eventFilter.
@@ -526,6 +526,68 @@ export interface WebhookDelivery {
 
 export interface WebhookDeliveryList {
   items: WebhookDelivery[];
+}
+
+/**
+ * Visitor-supplied input for POST /demo/mint. No live LLM call is made; the server simply hashes and chains the supplied content. Hard caps match the body-size limits enforced in the route handler.
+
+ */
+export interface DemoMintBody {
+  /**
+   * The AI prompt the visitor sent. Maximum 2 KiB.
+   * @minLength 1
+   * @maxLength 2048
+   */
+  prompt: string;
+  /**
+   * The AI response the visitor received. Maximum 32 KiB.
+   * @minLength 1
+   * @maxLength 32768
+   */
+  response: string;
+  /**
+   * Model identifier string (e.g. "gpt-4o", "claude-3-5-sonnet").
+   * @minLength 1
+   * @maxLength 100
+   */
+  model: string;
+}
+
+export type DemoReceiptPolicyStatus =
+  (typeof DemoReceiptPolicyStatus)[keyof typeof DemoReceiptPolicyStatus];
+
+export const DemoReceiptPolicyStatus = {
+  pass: "pass",
+  fail: "fail",
+  pending: "pending",
+  error: "error",
+} as const;
+
+/**
+ * A single receipt on the public demo chain. Same cryptographic shape as an authenticated Interaction but without the userId field (every demo receipt belongs to a single shared synthetic user, which is an implementation detail not exposed to anonymous callers).
+
+ */
+export interface DemoReceipt {
+  id: string;
+  prompt: string;
+  response: string;
+  model: string;
+  tags: string[];
+  promptHash: string;
+  responseHash: string;
+  prevHash?: string | null;
+  chainHash: string;
+  policyStatus: DemoReceiptPolicyStatus;
+  /** Frozen list of violations baked into the seeded fixture (e.g. "[CRITICAL] Phishing / Social Engineering Request"). Always empty for visitor-supplied mints — demo writes do not run policy evaluation.
+   */
+  policyViolations: string[];
+  createdAt: string;
+}
+
+export interface DemoChain {
+  items: DemoReceipt[];
+  /** Total number of receipts on the demo chain (may exceed items.length when capped). */
+  total: number;
 }
 
 /**

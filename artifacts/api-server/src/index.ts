@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startWebhookWorker } from "./lib/webhook-worker";
 import { listRoutes } from "./lib/list-routes";
+import { seedDemoChain } from "./lib/demo-seeder";
 
 // ---------------------------------------------------------------------------
 // `--print-routes` — Dev-tooling mode used by scripts/check-spec-drift.ts.
@@ -74,4 +75,10 @@ app.listen(port, (err) => {
   // Start in-process webhook delivery worker.
   // Polls webhook_deliveries every WEBHOOK_POLL_INTERVAL_MS (default 5 s).
   startWebhookWorker();
+
+  // Seed the public "demo chain" used by the no-login landing-page gallery.
+  // Idempotent: deterministic content-addressed ids + ON CONFLICT DO NOTHING,
+  // so this is safe to run on every boot. Errors are logged but never crash
+  // boot (see seedDemoChain implementation).
+  void seedDemoChain();
 });

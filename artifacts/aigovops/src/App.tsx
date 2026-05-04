@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, Link } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,13 +8,15 @@ import { Layout } from "./components/layout";
 import { ModeProvider, useMode } from "./context/mode";
 import { AdminAuthProvider } from "./context/adminAuth";
 import { useAuth } from "@workspace/replit-auth-web";
-import { Shield, Gauge, ChevronRight, ArrowRight, CheckCircle, XCircle, RotateCcw } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Shield, Gauge, ArrowRight, CheckCircle, XCircle } from "lucide-react";
+import { useState } from "react";
 import { useGetStats } from "@workspace/api-client-react";
 import TutorialPage from "./pages/tutorial";
 import CertificatePage from "./pages/certificate";
 import PublicVerifyPage from "./pages/public-verify";
+import DemoChainPage from "./pages/demo-chain";
+import { DemoGallery } from "./components/demo-gallery";
+import { ByoaiMintForm } from "./components/byoai-mint-form";
 
 // Expert pages
 import Dashboard from "./pages/dashboard";
@@ -38,13 +40,6 @@ import SimpleHistory from "./pages/simple/history";
 import SimpleCheck from "./pages/simple/check";
 
 const queryClient = new QueryClient();
-
-async function sha256hex(text: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 function ShieldMascot({ size = 96 }: { size?: number }) {
   return (
@@ -77,7 +72,6 @@ function ShieldMascot({ size = 96 }: { size?: number }) {
 const MOCK_PROMPT = "What is the capital of France?";
 const MOCK_RESPONSE = "The capital of France is Paris.";
 const MOCK_MODEL = "gpt-4o";
-const MOCK_TIMESTAMP = "2026-01-15T10:30:00.000Z";
 
 function HeroReceiptCard({ tampered }: { tampered?: boolean }) {
   const displayResponse = tampered
@@ -201,156 +195,6 @@ function HeroReceiptCard({ tampered }: { tampered?: boolean }) {
   );
 }
 
-function SampleReceiptModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [tampered, setTampered] = useState(false);
-  const [hashes, setHashes] = useState<{ prompt: string; response: string; chain: string } | null>(null);
-
-  const computeHashes = useCallback(async (response: string) => {
-    const promptHash = await sha256hex("prompt:" + MOCK_PROMPT);
-    const responseHash = await sha256hex("response:" + response);
-    const chainHash = await sha256hex("chain:" + promptHash + ":" + responseHash + ":GENESIS");
-    setHashes({ prompt: promptHash, response: responseHash, chain: chainHash });
-  }, []);
-
-  useEffect(() => {
-    if (open) {
-      setTampered(false);
-      computeHashes(MOCK_RESPONSE);
-    }
-  }, [open, computeHashes]);
-
-  useEffect(() => {
-    if (open) {
-      const response = tampered ? MOCK_RESPONSE.replace("Paris", "Pari5") : MOCK_RESPONSE;
-      computeHashes(response);
-    }
-  }, [tampered, open, computeHashes]);
-
-  const displayResponse = tampered ? MOCK_RESPONSE.replace("Paris", "Pari5") : MOCK_RESPONSE;
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent
-        className="max-w-lg"
-        style={{ background: "#0a1628", border: "1px solid rgba(16,185,129,0.2)", color: "white" }}
-      >
-        <DialogHeader>
-          <DialogTitle className="text-white flex items-center gap-2">
-            <Shield className="w-4 h-4" style={{ color: "#10b981" }} />
-            <span style={{ fontFamily: "'Satoshi', sans-serif" }}>Sample Signed Receipt</span>
-          </DialogTitle>
-        </DialogHeader>
-
-        {/* Chat */}
-        <div
-          className="rounded-xl p-4 space-y-3"
-          style={{ background: "#0f1d33", border: "1px solid rgba(255,255,255,0.06)" }}
-        >
-          <div className="flex gap-2 items-start">
-            <span className="text-sm">👤</span>
-            <div className="text-sm text-white/70 bg-white/5 rounded-lg px-3 py-1.5 text-xs">{MOCK_PROMPT}</div>
-          </div>
-          <div className="flex gap-2 items-start flex-row-reverse">
-            <span className="text-sm">🤖</span>
-            <div
-              className="text-xs rounded-lg px-3 py-1.5 transition-all duration-500"
-              style={{
-                background: tampered ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)",
-                color: tampered ? "#fca5a5" : "#6ee7b7",
-                border: tampered ? "1px solid rgba(239,68,68,0.3)" : "1px solid rgba(16,185,129,0.2)",
-              }}
-            >
-              {displayResponse}
-            </div>
-          </div>
-        </div>
-
-        {/* Hash table */}
-        <div
-          className="rounded-xl p-4 space-y-2"
-          style={{ background: "#0f1d33", fontFamily: "'JetBrains Mono', monospace" }}
-        >
-          <div className="text-[9px] uppercase tracking-widest mb-3" style={{ color: "#10b981" }}>
-            CRYPTOGRAPHIC RECEIPT
-          </div>
-          {[
-            { label: "PROMPT HASH", value: hashes?.prompt, field: "prompt" },
-            { label: "RESPONSE HASH", value: hashes?.response, field: "response" },
-            { label: "CHAIN HASH", value: hashes?.chain, field: "chain" },
-            { label: "TIMESTAMP", value: MOCK_TIMESTAMP, field: null },
-            { label: "MODEL", value: MOCK_MODEL, field: null },
-            { label: "PREV LINK", value: "GENESIS", field: null },
-          ].map(({ label, value, field }) => {
-            const isBroken = tampered && (field === "response" || field === "chain");
-            return (
-              <div key={label} className="flex items-start gap-3">
-                <span className="text-[9px] text-white/30 uppercase tracking-wider w-32 flex-shrink-0 pt-0.5">{label}</span>
-                <span
-                  className="text-[9px] break-all leading-relaxed transition-colors duration-300"
-                  style={{ color: isBroken ? "#f87171" : "rgba(255,255,255,0.65)" }}
-                >
-                  {value ?? "…"}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Status badge */}
-        <div
-          className="flex items-center justify-center gap-2 rounded-xl py-3 transition-all duration-500"
-          style={{
-            background: tampered ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)",
-            border: tampered ? "2px solid rgba(239,68,68,0.4)" : "2px solid rgba(16,185,129,0.4)",
-          }}
-        >
-          {tampered ? (
-            <XCircle className="w-5 h-5 text-red-400" />
-          ) : (
-            <CheckCircle className="w-5 h-5" style={{ color: "#10b981" }} />
-          )}
-          <span
-            className="text-sm font-bold tracking-widest uppercase"
-            style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              color: tampered ? "#f87171" : "#10b981",
-            }}
-          >
-            {tampered ? "CHAIN BROKEN" : "VERIFIED"}
-          </span>
-        </div>
-
-        {/* Tamper / Restore button */}
-        <button
-          onClick={() => setTampered((t) => !t)}
-          className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition-all hover:opacity-80"
-          style={{
-            background: tampered ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.07)",
-            border: tampered ? "1px solid rgba(239,68,68,0.35)" : "1px solid rgba(255,255,255,0.12)",
-            color: tampered ? "#fca5a5" : "rgba(255,255,255,0.7)",
-          }}
-        >
-          {tampered ? (
-            <>
-              <RotateCcw className="w-3.5 h-3.5" />
-              Restore original
-            </>
-          ) : (
-            <>
-              <XCircle className="w-3.5 h-3.5" />
-              Tamper this receipt
-            </>
-          )}
-        </button>
-
-        <p className="text-center text-white/30 text-[10px]" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-          Changing one character breaks the entire hash chain — that's the point.
-        </p>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 const STAKES = [
   {
     icon: "⚖️",
@@ -448,7 +292,6 @@ function ModePickerCollapsed({
 function WelcomeScreen({ onGuest }: { onGuest: () => void }) {
   const { mode, setMode } = useMode();
   const { login } = useAuth();
-  const [sampleOpen, setSampleOpen] = useState(false);
 
   return (
     <div
@@ -543,28 +386,38 @@ function WelcomeScreen({ onGuest }: { onGuest: () => void }) {
       </div>
 
       {/* ── RIGHT PANEL ── */}
-      <div className="relative flex flex-col justify-center px-8 lg:px-10 py-12 lg:w-[440px] lg:flex-shrink-0">
-        <div className="w-full max-w-sm mx-auto space-y-5">
+      <div className="relative flex flex-col px-8 lg:px-10 py-12 lg:w-[480px] lg:flex-shrink-0">
+        <div className="w-full max-w-sm mx-auto space-y-4">
 
           {/* Hero receipt card */}
           <HeroReceiptCard />
 
-          {/* Primary CTA */}
-          <button
-            onClick={() => setSampleOpen(true)}
-            className="w-full flex items-center justify-center gap-2.5 rounded-xl py-3.5 font-bold text-sm transition-all hover:opacity-90 active:scale-[0.98]"
-            style={{
-              background: "linear-gradient(135deg, #10B981, #059669)",
-              color: "white",
-              fontFamily: "'Satoshi', system-ui, sans-serif",
-              boxShadow: "0 0 24px rgba(16,185,129,0.35)",
-            }}
-            data-testid="btn-see-sample"
-          >
-            <Shield className="w-4 h-4" />
-            See a sample receipt
-            <ChevronRight className="w-4 h-4 opacity-70" />
-          </button>
+          {/* Live demo gallery — replaces the old "See a sample receipt" CTA.
+              Renders real receipts from GET /api/demo/chain so visitors can
+              tamper any one of them and watch the chain hash break. */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span
+                className="text-[10px] font-bold uppercase tracking-widest"
+                style={{ color: "#10b981", fontFamily: "'JetBrains Mono', monospace" }}
+                data-testid="label-demo-gallery"
+              >
+                Live demo receipts
+              </span>
+              <Link
+                href="/demo-chain"
+                className="text-[10px] font-semibold uppercase tracking-wider transition-opacity hover:opacity-80"
+                style={{ color: "rgba(255,255,255,0.5)" }}
+                data-testid="link-demo-chain"
+              >
+                See full chain →
+              </Link>
+            </div>
+            <DemoGallery limit={4} />
+          </div>
+
+          {/* Bring-your-own-AI-output mint form */}
+          <ByoaiMintForm />
 
           {/* Secondary CTA — sign in */}
           <button
@@ -597,9 +450,6 @@ function WelcomeScreen({ onGuest }: { onGuest: () => void }) {
           <ModePickerCollapsed mode={mode} setMode={setMode} />
         </div>
       </div>
-
-      {/* Sample receipt modal */}
-      <SampleReceiptModal open={sampleOpen} onClose={() => setSampleOpen(false)} />
     </div>
   );
 }
@@ -673,8 +523,9 @@ function App() {
             <AdminAuthProvider>
               <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
                 <Switch>
-                  {/* Public route — no auth required; must come before AuthGate */}
+                  {/* Public routes — no auth required; must come before AuthGate */}
                   <Route path="/verify/:id" component={PublicVerifyPage} />
+                  <Route path="/demo-chain" component={DemoChainPage} />
                   <Route>
                     <AuthGate>
                       <Router />
