@@ -373,17 +373,10 @@ function AddEndpointForm({ onClose }: { onClose: () => void }) {
             </p>
           </div>
 
-          <label className="flex items-center gap-2.5 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={emailAlerts}
-              onChange={(e) => setEmailAlerts(e.target.checked)}
-              className="rounded"
-              data-testid="webhook-email-alerts"
-            />
-            <span className="text-sm font-medium text-foreground">Email alerts for critical violations</span>
-            <span className="text-xs text-muted-foreground">(requires SMTP config)</span>
-          </label>
+          <div className="flex items-center gap-2.5 rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            <Mail className="w-4 h-4 shrink-0" />
+            <span>Email alerts for critical violations — coming soon in a future update.</span>
+          </div>
 
           {err && (
             <p className="text-sm text-red-500 flex items-center gap-1.5">

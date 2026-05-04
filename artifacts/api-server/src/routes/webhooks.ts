@@ -124,7 +124,7 @@ router.post("/webhooks", requireAuth, async (req, res) => {
     return;
   }
 
-  if (await isUnsafeUrl(body.url)) {
+  if (await isUnsafeUrl(body.url, { failClosedOnDnsError: true })) {
     res.status(422).json({
       error: "URL must use http/https and must not point to private, loopback, or link-local addresses.",
     });
@@ -193,7 +193,7 @@ router.patch("/webhooks/:id", requireAuth, async (req, res) => {
     return;
   }
 
-  if (body.url !== undefined && await isUnsafeUrl(body.url)) {
+  if (body.url !== undefined && await isUnsafeUrl(body.url, { failClosedOnDnsError: true })) {
     res.status(422).json({
       error: "URL must use http/https and must not point to private, loopback, or link-local addresses.",
     });
@@ -269,7 +269,7 @@ router.post("/webhooks/:id/test", requireAuth, async (req, res) => {
     return;
   }
 
-  if (await isUnsafeUrl(endpoint.url)) {
+  if (await isUnsafeUrl(endpoint.url, { failClosedOnDnsError: true })) {
     res.json({ ok: false, statusCode: null, error: "URL is private or unsafe — delivery blocked" });
     return;
   }

@@ -63,12 +63,21 @@ function isPrivateIp(ip: string): boolean {
  * Returns true if the URL should be blocked due to SSRF risk.
  * Performs two checks:
  *   1. Hostname-pattern check (fast, synchronous — catches literal private addresses).
- *   2. DNS resolution check (async — catches hostnames that resolve to private IPs,
- *      preventing DNS rebinding attacks). On DNS failure the URL is allowed through
- *      fail-open; the delivery fetch will simply fail at the network layer.
- * Exported so webhooks.ts can validate at endpoint creation/update/test time.
+ *   2. DNS resolution check (async, all address families) — resolves ALL A and AAAA
+ *      records and blocks if any resolved IP is private, loopback, or link-local.
+ *      This prevents DNS rebinding attacks where a public hostname resolves to an
+ *      internal IP.
+ *
+ * @param rawUrl - The URL to check.
+ * @param opts.failClosedOnDnsError - When true (use at endpoint creation/update/test),
+ *   DNS resolution failures cause the URL to be blocked. When false (delivery worker),
+ *   DNS errors fail-open so already-validated endpoints are not silently broken by
+ *   transient DNS outages. Defaults to false.
  */
-export async function isUnsafeUrl(rawUrl: string): Promise<boolean> {
+export async function isUnsafeUrl(
+  rawUrl: string,
+  opts: { failClosedOnDnsError?: boolean } = {},
+): Promise<boolean> {
   let u: URL;
   try {
     u = new URL(rawUrl);
@@ -79,12 +88,18 @@ export async function isUnsafeUrl(rawUrl: string): Promise<boolean> {
   const h = u.hostname.toLowerCase();
   if (h === "localhost" || h.endsWith(".localhost")) return true;
   if (isPrivateIp(h)) return true;
-  // DNS resolution check — detects public hostnames that resolve to private IPs
+  // Resolve ALL A and AAAA records and block if any address is private.
+  // Using { all: true } returns every address rather than just the first one,
+  // preventing evasion by mixing public and private addresses in DNS responses.
   try {
-    const { address } = await dns.lookup(h, { family: 4 });
-    if (isPrivateIp(address)) return true;
+    const addresses = await dns.lookup(h, { all: true });
+    for (const { address: addr } of addresses) {
+      if (isPrivateIp(addr)) return true;
+    }
   } catch {
-    // DNS resolution failed — fail-open (the outbound fetch will fail naturally)
+    if (opts.failClosedOnDnsError) return true;
+    // Fail-open for the delivery worker: transient DNS failures during retry
+    // should not permanently block an otherwise-valid endpoint.
   }
   return false;
 }
@@ -181,47 +196,13 @@ function matchesEventFilter(
   return violations.some((v) => v.severity === "high" || v.severity === "critical");
 }
 
-// ── Email alerts (optional) ───────────────────────────────────────────────────
-
-/**
- * Optionally send an email alert for critical violations.
- * Requires SMTP_HOST env var. Falls back to ALERT_EMAIL env var for recipient
- * until per-endpoint email addresses are supported (see task #45).
- */
-async function maybeSendEmailAlert(params: {
-  receiptId: string;
-  payload: WebhookPayload;
-}): Promise<void> {
-  if (!process.env["SMTP_HOST"]) return;
-  const recipient = process.env["ALERT_EMAIL"];
-  if (!recipient) return;
-  try {
-    const transporter = nodemailer.createTransport({
-      host: process.env["SMTP_HOST"],
-      port: Number(process.env["SMTP_PORT"] ?? 587),
-      secure: process.env["SMTP_SECURE"] === "true",
-      auth: process.env["SMTP_USER"]
-        ? { user: process.env["SMTP_USER"], pass: process.env["SMTP_PASS"] ?? "" }
-        : undefined,
-    });
-    await transporter.sendMail({
-      from: process.env["SMTP_FROM"] ?? "alerts@aigovops.app",
-      to: recipient,
-      subject: `AIGovOps Alert: ${params.payload.summary}`,
-      text:
-        `Receipt ID: ${params.receiptId}\n` +
-        `${params.payload.summary}\n\n` +
-        `Violations:\n` +
-        params.payload.violations
-          .map((v) => `  - [${v.severity.toUpperCase()}] ${v.policyName}`)
-          .join("\n") +
-        `\n\nTimestamp: ${params.payload.timestamp}`,
-    });
-    logger.info({ email: recipient, receiptId: params.receiptId }, "Email alert sent");
-  } catch (err) {
-    logger.warn({ err, smtpHost: process.env["SMTP_HOST"] }, "Email alert failed — check SMTP config");
-  }
-}
+// ── Email alerts (pending task #45) ──────────────────────────────────────────
+// Email delivery requires a per-endpoint recipient address persisted in the DB.
+// The emailAlerts flag is stored and exposed through the API so the schema
+// is already in place, but no emails are sent until task #45 adds the
+// alertEmail column and wires the correct per-user recipient.
+// nodemailer is retained as an installed dependency for that implementation.
+void nodemailer;
 
 // ── Enqueue helper ────────────────────────────────────────────────────────────
 
@@ -248,8 +229,6 @@ export async function enqueueWebhookDeliveries(params: {
   const payload = buildViolationPayload({ receiptId, violatedPolicies });
   const payloadStr = JSON.stringify(payload);
 
-  const hasCritical = violatedPolicies.some((v) => v.severity === "critical");
-
   const rows = [];
   for (const ep of endpoints) {
     const parsedPolicyIds = ep.policyIds
@@ -266,13 +245,6 @@ export async function enqueueWebhookDeliveries(params: {
       attempts: 0,
       payload: payloadStr,
     });
-
-    // Fire email alert for critical violations when emailAlerts is enabled
-    if (ep.emailAlerts === 1 && hasCritical) {
-      maybeSendEmailAlert({ receiptId, payload }).catch((err) => {
-        logger.warn({ err, endpointId: ep.id }, "Email alert error");
-      });
-    }
   }
 
   if (rows.length > 0) {
